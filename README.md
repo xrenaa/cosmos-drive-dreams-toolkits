@@ -66,3 +66,7 @@ Set `nproc_per_node` to the number of processes you want to use.
 **Waymo Rendering Results (use pinhole intrinsics in Waymo Open Dataset)**
 ![Waymo Rendering Results](./assets/waymo_render_pinhole.png)
 
+## Citation
+```bibtex
+
+```
