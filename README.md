@@ -1,4 +1,4 @@
-# cosmos av sample toolkits
+# Cosmos AV Sample Toolkits
 This repo provides toolkits for HD map / bounding box / LiDAR condition video generation from RDS-HQ dataset. It also provides the conversion scripts from other datasets(e.g. Waymo Open Dataset) to RDS-HQ format.
 ## Install
 
