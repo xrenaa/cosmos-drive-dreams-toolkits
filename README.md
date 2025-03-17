@@ -5,7 +5,7 @@ This repo provides toolkits for:
 
 * Providing 10 NVIDIA collected examples in raw data. We provide scripts to render the raw data into [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1) input videos (LiDAR and HDMAP).
 
-**[[Paper]](https://github.com/nvidia-cosmos/cosmos-transfer1)**
+**[[Paper]]()**
 **[[Model Code]](https://github.com/nvidia-cosmos/cosmos-transfer1)**
 **[[Website]]()**
 
