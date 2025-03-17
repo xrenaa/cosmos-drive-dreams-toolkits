@@ -1,15 +1,46 @@
 # Cosmos-AV-Sample Toolkits
-This repo provides toolkits for generating HD map / bounding box / LiDAR condition video from the RDS-HQ dataset for [**Cosmos-Transfer1-7B-Sample-AV**](https://huggingface.co/nvidia/Cosmos-Transfer1-7B-Sample-AV). It also provides conversion scripts from other datasets(e.g., Waymo Open Dataset) to RDS-HQ format.
+This repo provides toolkits for:
 
-## Install
+* Rendering open-source datasets (e.g., Waymo Open Dataset) into input videos (LiDAR and HDMAP) compatible with [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1).
+
+* Providing 10 NVIDIA collected examples in raw data. We provide scripts to render the raw data into [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1) input videos (LiDAR and HDMAP).
+
+**[[Paper]]()**
+**[[Model Code]](https://github.com/nvidia-cosmos/cosmos-transfer1)**
+**[[Website]]()**
+
+## Quick Start
+
+We provide pre-rendered examples [here](https://huggingface.co/datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example/tree/main/examples) (rendered HDMAP / rendered LiDAR / text prompts). You could download and use these examples to play with [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1)!
+
+## Installation
 
 ```bash
 conda env create -f environment.yaml
 conda activate cosmos-av-toolkits
 ```
 
+## Download Dataset
+
+We provide a dataset example contraining 10 samples with HD map and LiDAR.
+
+1. Generate a [Hugging Face](https://huggingface.co/settings/tokens) access token. Set the access token to 'Read' permission (default is 'Fine-grained').
+
+2. Log in to Hugging Face with the access token:
+
+```bash
+huggingface-cli login
+```
+
+3. Download the dataset example from [Hugging Face](https://huggingface.co/datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example) (about 8GB):
+```bash
+git lfs install
+git clone git@hf.co:datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example
+```
+
+
 ## Usage
-You can use `render_from_rds_hq.py` to render the HD map + bounding box / LiDAR condition videos from RDS-HQ dataset
+You can use `render_from_rds_hq.py` to render the HD map + bounding box / LiDAR condition videos from RDS-HQ dataset. GPU is required for rendering LiDAR.
 ```bash
 # single process
 python render_from_rds_hq.py -i <RDS_HQ_FOLDER> -o <OUTPUT_FOLDER> [--skip hdmap] [--skip lidar]
@@ -33,6 +64,9 @@ Parsing tfrecords from Waymo Open Dataset requires extra dependencies; install i
 ```bash
 pip install waymo-open-dataset-tf-2-11-0==1.6.1
 ```
+
+#### Step 0: Check Our Provided Captions
+We provide auto-generated captions for the Waymo dataset at [`assets/waymo_caption.csv`](./assets/waymo_caption.csv). You will need these captions to run [**Cosmos-Transfer1-7B-Sample-AV**](https://huggingface.co/nvidia/Cosmos-Transfer1-7B-Sample-AV).
 
 #### Step 1: Convert Waymo Open Dataset to RDS-HQ format
 First, convert the Waymo Open Dataset to RDS-HQ format. Suppose you have a folder with Waymo Open Dataset's tfrecords, you can convert it to RDS-HQ format by:
@@ -66,7 +100,7 @@ Set `nproc_per_node` to the number of processes you want to use.
 **Waymo Rendering Results (use pinhole intrinsics in Waymo Open Dataset)**
 ![Waymo Rendering Results](./assets/waymo_render_pinhole.png)
 
-## Citation
+<!-- ## Citation
 ```bibtex
 
-```
+``` -->
