@@ -1,9 +1,9 @@
 # Cosmos-AV-Sample Toolkits
 This repo provides toolkits for:
 
-* Rendering open-source datasets (e.g., Waymo Open Dataset) into input videos (LiDAR and HDMAP) compatible with [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1).
+* A rendering script that converts open-source datasets (e.g., Waymo Open Dataset) into input videos (LiDAR and HDMAP) compatible with [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1).
 
-* Providing 10 NVIDIA collected examples in raw data. We provide scripts to render the raw data into [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1) input videos (LiDAR and HDMAP).
+* 10 examples (collected by NVIDIA) of input prompts in raw format to help understand how to interface with the model. We provide scripts to render the raw data into [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1) input videos (LiDAR and HDMAP).
 
 **[[Paper]]()**
 **[[Model Code]](https://github.com/nvidia-cosmos/cosmos-transfer1)**
@@ -15,10 +15,9 @@ This repo provides toolkits for:
 
 ## Quick Start
 
-We provide pre-rendered examples [here](https://huggingface.co/datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example/tree/main/examples) (rendered HDMAP / rendered LiDAR / text prompts). You could download and use these examples to play with [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1)!
+We provide pre-rendered examples [here](https://huggingface.co/datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example/tree/main/examples) (rendered HDMAP / rendered LiDAR / text prompts). You can download and use these examples to test [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1)!
 
 ## Installation
-
 ```bash
 git clone https://github.com/nv-tlabs/cosmos-av-sample-toolkits.git
 cd cosmos-av-sample-toolkits
@@ -26,26 +25,14 @@ conda env create -f environment.yaml
 conda activate cosmos-av-toolkits
 ```
 
-## Download Dataset
-
-We provide a dataset example contraining 10 samples with HD map and LiDAR.
-
-<!-- 1. Generate a [Hugging Face](https://huggingface.co/settings/tokens) access token. Set the access token to 'Read' permission (default is 'Fine-grained').
-
-2. Log in to Hugging Face with the access token:
-
-```bash
-huggingface-cli login
-``` -->
-
+## Download Examples
+We provide 10 examples of input prompts with HD map and LiDAR, to help test the model.
 1. Add your SSH public key to your [user settings](https://huggingface.co/settings/keys) on Hugging Face.
-
-2. Download the dataset example from [Hugging Face](https://huggingface.co/datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example) (about 8GB):
+2. Download the examples from [Hugging Face](https://huggingface.co/datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example) (about 8GB):
 ```bash
 git lfs install
 git clone git@hf.co:datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example
 ```
-
 
 ## Usage
 You can use `render_from_rds_hq.py` to render the HD map + bounding box / LiDAR condition videos from RDS-HQ dataset. GPU is required for rendering LiDAR.
@@ -61,13 +48,12 @@ You can also run this script in multiple processes to speed up the rendering pro
 torchrun --nproc_per_node=32 render_from_rds_hq.py -i <RDS_HQ_FOLDER> -o <OUTPUT_FOLDER> [--skip hdmap] [--skip lidar]
 ```
 Set `nproc_per_node` to the number of processes you want to use.
-
 **RDS-HQ Rendering Results**
 ![RDS-HQ Rendering Results](./assets/rds_hq_render.png)
 
-## Convert from Other Dataset
+## Convert Public Datasets
 
-We provide a conversion and rendering script for the Waymo Open Dataset as an example. However, our model is not trained on the Waymo dataset, and this script is intended to help users better understand our data format. As a result, a drop in generative video quality is expected.
+We provide a conversion and rendering script for the Waymo Open Dataset as an example of how information from another AV source can interface with the model. Note that our model is not trained on the Waymo dataset, and this script is intended to help users better understand our data format. As a result, a drop in generative video quality is expected. Finetuning on the desired custom dataset would be beneficial to improve quality.
 
 ### Waymo Open Dataset
 Parsing tfrecords from Waymo Open Dataset requires extra dependencies; install it with
@@ -86,7 +72,7 @@ python convert_waymo_to_rds_hq.py -i <WAYMO_TFRECORDS_FOLDER> -o waymo_demo -n 3
 Here we specify the output folder as `waymo_demo`; you can change it to any other one. You can also increase the number of workers (`-n`) to your CPU cores to speed up the conversion.
 
 #### Step 2: Render HD map + bounding box / LiDAR condition video from RDS-HQ format
-Since we have converted Waymo Open Dataset's map labels and LiDAR points into the RDS-HQ format, we can render the HD map + bounding box / LiDAR condition video using the same script. The cameras in Waymo's open dataset are pinhole camera models. To align with our model's training domain, we suggest using the same f-theta camera intrinsics to do the projection. We provide a default f-theta camera intrinsics in `config/default_ftheta_intrinsic.tar`, and you can render with f-theta camera by:
+Since we have converted Waymo Open Dataset's map labels and LiDAR points into the RDS-HQ format, we can render the HD map + bounding box / LiDAR conditioned video using the same script. The cameras in Waymo's Open dataset are pinhole camera models. To align with our model's training domain, we suggest using the same f-theta camera intrinsics to do the projection. We provide a default f-theta camera intrinsics in `config/default_ftheta_intrinsic.tar`, and you can render with f-theta camera by:
 ```bash
 python render_from_rds_hq.py -d waymo -i waymo_demo -o waymo_demo_render_ftheta -c ftheta
 ```
@@ -99,7 +85,7 @@ python render_from_rds_hq.py -d waymo -i waymo_demo -o waymo_demo_render_pinhole
 
 You can also run this script in multiple processes to speed up the rendering process.
 ```bash
-torchrun --nproc_per_node=32 render_from_rds_hq.py -d waymo -i waymo_demo -o waymo_demo_render_ftheta 
+torchrun --nproc_per_node=32 render_from_rds_hq.py -d waymo -i waymo_demo -o waymo_demo_render_ftheta
 ```
 Set `nproc_per_node` to the number of processes you want to use.
 
@@ -109,19 +95,14 @@ Set `nproc_per_node` to the number of processes you want to use.
 
 **Waymo Rendering Results (use pinhole intrinsics in Waymo Open Dataset)**
 ![Waymo Rendering Results](./assets/waymo_render_pinhole.png)
-
 <!-- ## Citation
 ```bibtex
-
 ``` -->
-
 ## Prompting During Inference
-We provide a captioning modification example to help users reproduce our results. To modify the weather of certain prompt, we use LLM. Below is an example transformation request:
+We provide a captioning modification example to help users reproduce our results. To modify the weather in a certain prompt, we use a LLM. Below is an example transformation request:
 ```bash
 Given the prompt:
-
 "The video is captured from a camera mounted on a car. The camera is facing forward. The video depicts a driving scene in an urban environment. The car hood is white. The camera is positioned inside a vehicle, providing a first-person perspective of the road ahead. The street is lined with modern buildings, including a tall skyscraper on the right and a historic-looking building on the left. The road is clear of traffic, with only a few distant vehicles visible in the distance. The weather appears to be clear and sunny, with a blue sky and some clouds. The time of day seems to be daytime, as indicated by the bright sunlight and shadows. The scene is quiet and devoid of pedestrians or other obstacles, suggesting a smooth driving experience."
-
 Modify the environment to:
 1. Morning with fog
 2. Golden hour with sunlight
@@ -130,4 +111,4 @@ Modify the environment to:
 5. Heavy fog in the evening
 ...
 ```
-Then you could use the modified text prompts as inputs to our model.
+You can use the modified text prompts as input to our model.
