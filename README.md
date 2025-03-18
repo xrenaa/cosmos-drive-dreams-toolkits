@@ -7,7 +7,7 @@ This repo provides toolkits for:
 
 **[[Paper]]()**
 **[[Model Code]](https://github.com/nvidia-cosmos/cosmos-transfer1)**
-**[[Website]]()**
+**[[Website]](https://research.nvidia.com/labs/dir/cosmos-transfer1/)**
 
 <div align="center">
   <img src="assets/av_example.gif" alt=""  width="1100" />
@@ -123,3 +123,13 @@ Modify the environment to:
 ...
 ```
 You can use the modified text prompts as input to our model.
+
+## Citation
+```bibtex
+@misc{nvidia2025cosmostransfer1,
+  title     = {Cosmos Transfer1: World Generation with Adaptive Multimodal Control},
+  author    = {NVIDIA}, 
+  year      = {2025},
+  url       = {https://arxiv.org/abs/xxx}
+}
+```
