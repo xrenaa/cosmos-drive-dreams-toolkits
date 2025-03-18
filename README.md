@@ -51,6 +51,8 @@ Set `nproc_per_node` to the number of processes you want to use.
 **RDS-HQ Rendering Results**
 ![RDS-HQ Rendering Results](./assets/rds_hq_render.png)
 
+If you're interested, we offer [documentation](./assets/ftheta.pdf) that explains the NVIDIA f-theta camera in detail.
+
 ## Convert Public Datasets
 
 We provide a conversion and rendering script for the Waymo Open Dataset as an example of how information from another AV source can interface with the model. Note that our model is not trained on the Waymo dataset, and this script is intended to help users better understand our data format. As a result, a drop in generative video quality is expected. Finetuning on the desired custom dataset would be beneficial to improve quality.
