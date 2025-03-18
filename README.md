@@ -67,6 +67,8 @@ Set `nproc_per_node` to the number of processes you want to use.
 
 ## Convert from Other Dataset
 
+We provide a conversion and rendering script for the Waymo Open Dataset as an example. However, our model is not trained on the Waymo dataset, and this script is intended to help users better understand our data format. As a result, a drop in generative video quality is expected.
+
 ### Waymo Open Dataset
 Parsing tfrecords from Waymo Open Dataset requires extra dependencies; install it with
 ```bash
