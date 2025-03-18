@@ -9,6 +9,10 @@ This repo provides toolkits for:
 **[[Model Code]](https://github.com/nvidia-cosmos/cosmos-transfer1)**
 **[[Website]]()**
 
+<div align="center">
+  <img src="assets/av_example.gif" alt=""  width="1100" />
+</div>
+
 ## Quick Start
 
 We provide pre-rendered examples [here](https://huggingface.co/datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example/tree/main/examples) (rendered HDMAP / rendered LiDAR / text prompts). You could download and use these examples to play with [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1)!
@@ -16,6 +20,8 @@ We provide pre-rendered examples [here](https://huggingface.co/datasets/nvidia/C
 ## Installation
 
 ```bash
+git clone https://github.com/nv-tlabs/cosmos-av-sample-toolkits.git
+cd cosmos-av-sample-toolkits
 conda env create -f environment.yaml
 conda activate cosmos-av-toolkits
 ```
@@ -24,15 +30,17 @@ conda activate cosmos-av-toolkits
 
 We provide a dataset example contraining 10 samples with HD map and LiDAR.
 
-1. Generate a [Hugging Face](https://huggingface.co/settings/tokens) access token. Set the access token to 'Read' permission (default is 'Fine-grained').
+<!-- 1. Generate a [Hugging Face](https://huggingface.co/settings/tokens) access token. Set the access token to 'Read' permission (default is 'Fine-grained').
 
 2. Log in to Hugging Face with the access token:
 
 ```bash
 huggingface-cli login
-```
+``` -->
 
-3. Download the dataset example from [Hugging Face](https://huggingface.co/datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example) (about 8GB):
+1. Add your SSH public key to your [user settings](https://huggingface.co/settings/keys) on Hugging Face.
+
+2. Download the dataset example from [Hugging Face](https://huggingface.co/datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example) (about 8GB):
 ```bash
 git lfs install
 git clone git@hf.co:datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example
@@ -104,3 +112,20 @@ Set `nproc_per_node` to the number of processes you want to use.
 ```bibtex
 
 ``` -->
+
+## Prompting During Inference
+We provide a captioning modification example to help users reproduce our results. To modify the weather of certain prompt, we use LLM. Below is an example transformation request:
+```bash
+Given the prompt:
+
+"The video is captured from a camera mounted on a car. The camera is facing forward. The video depicts a driving scene in an urban environment. The car hood is white. The camera is positioned inside a vehicle, providing a first-person perspective of the road ahead. The street is lined with modern buildings, including a tall skyscraper on the right and a historic-looking building on the left. The road is clear of traffic, with only a few distant vehicles visible in the distance. The weather appears to be clear and sunny, with a blue sky and some clouds. The time of day seems to be daytime, as indicated by the bright sunlight and shadows. The scene is quiet and devoid of pedestrians or other obstacles, suggesting a smooth driving experience."
+
+Modify the environment to:
+1. Morning with fog
+2. Golden hour with sunlight
+3. Heavy snowy day
+4. Heavy rainy day
+5. Heavy fog in the evening
+...
+```
+Then you could use the modified text prompts as inputs to our model.
