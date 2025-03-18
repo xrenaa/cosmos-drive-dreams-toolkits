@@ -101,6 +101,14 @@ Set `nproc_per_node` to the number of processes you want to use.
 <!-- ## Citation
 ```bibtex
 ``` -->
+
+**Our Model with Waymo Inputs**
+<div align="center">
+  <img src="assets/waymo_example.gif" alt=""  width="1100" />
+</div>
+
+
+
 ## Prompting During Inference
 We provide a captioning modification example to help users reproduce our results. To modify the weather in a certain prompt, we use a LLM. Below is an example transformation request:
 ```bash
