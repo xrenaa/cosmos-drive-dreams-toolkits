@@ -51,7 +51,8 @@ Set `nproc_per_node` to the number of processes you want to use.
 **RDS-HQ Rendering Results**
 ![RDS-HQ Rendering Results](./assets/rds_hq_render.png)
 
-If you're interested, we offer [documentation](./assets/ftheta.pdf) that explains the NVIDIA f-theta camera in detail.
+> [!NOTE]
+> If you're interested, we offer [documentation](./assets/ftheta.pdf) that explains the NVIDIA f-theta camera in detail.
 
 ## Convert Public Datasets
 
