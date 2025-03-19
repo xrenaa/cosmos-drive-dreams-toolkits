@@ -1,11 +1,11 @@
 # Cosmos-AV-Sample Toolkits
 This repo provides toolkits for:
 
-* A rendering script that converts open-source datasets (e.g., Waymo Open Dataset) into input videos (LiDAR and HDMAP) compatible with [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1).
+* A rendering script that converts open-source datasets (e.g., Waymo Open Dataset) into input videos (LiDAR and HDMAP) compatible with [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1/blob/main/examples/inference_cosmos_transfer1_7b_sample_av.md).
 
-* 10 examples (collected by NVIDIA) of input prompts in raw format to help understand how to interface with the model. We provide scripts to render the raw data into [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1) input videos (LiDAR and HDMAP).
+* 10 examples (collected by NVIDIA) of input prompts in raw format to help understand how to interface with the model. We provide scripts to render the raw data into [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1/blob/main/examples/inference_cosmos_transfer1_7b_sample_av.md) input videos (LiDAR and HDMAP).
 
-**[[Paper]]()**
+**[[Paper]](https://arxiv.org/abs/2503.14492)**
 **[[Model Code]](https://github.com/nvidia-cosmos/cosmos-transfer1)**
 **[[Website]](https://research.nvidia.com/labs/dir/cosmos-transfer1/)**
 
@@ -65,7 +65,7 @@ pip install waymo-open-dataset-tf-2-11-0==1.6.1
 ```
 
 #### Step 0: Check Our Provided Captions
-We provide auto-generated captions for the Waymo dataset at [`assets/waymo_caption.csv`](./assets/waymo_caption.csv). You will need these captions to run [**Cosmos-Transfer1-7B-Sample-AV**](https://huggingface.co/nvidia/Cosmos-Transfer1-7B-Sample-AV).
+We provide auto-generated captions for the Waymo dataset at [`assets/waymo_caption.csv`](./assets/waymo_caption.csv). You will need these captions to run [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1/blob/main/examples/inference_cosmos_transfer1_7b_sample_av.md).
 
 #### Step 1: Download Waymo Open Dataset (Skip if Downloaded)
 
@@ -167,6 +167,6 @@ You can use the modified text prompts as input to our model.
   title     = {Cosmos Transfer1: World Generation with Adaptive Multimodal Control},
   author    = {NVIDIA}, 
   year      = {2025},
-  url       = {https://arxiv.org/abs/xxx}
+  url       = {https://arxiv.org/abs/2503.14492}
 }
 ```
