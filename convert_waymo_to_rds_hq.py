@@ -366,8 +366,8 @@ def convert_waymo_image(output_root: Path, clip_id: str, dataset: tf.data.TFReco
     
     for camera_name, image_sequence in camera_name_to_image_sequence.items():
         # waymo is recorded at 10 Hz
-        if camera_name != 'front':
-            continue
+        ## if camera_name != 'front':
+        ##    continue
         output_video_path = (output_root / f"pinhole_{camera_name}" / f'{clip_id}.mp4')
         output_video_path.parent.mkdir(parents=True, exist_ok=True)
 
