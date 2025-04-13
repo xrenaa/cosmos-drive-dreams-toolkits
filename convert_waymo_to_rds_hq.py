@@ -381,7 +381,8 @@ def convert_waymo_image(output_root: Path, clip_id: str, dataset: tf.data.TFReco
 
         writer = imageio_v1.get_writer(
             output_video_path.as_posix(),
-            fps=SourceFps
+            fps=SourceFps,
+            macro_block_size=None,  # This makes sure num_frames is correct (by default it is rounded to 16x).
         )
         for image in image_sequence:
             writer.append_data(image)
@@ -409,8 +410,8 @@ def convert_waymo_tfrecord_to_wds(
     convert_waymo_intrinsics(output_wds_path, clip_id, dataset)
     convert_waymo_pose(output_wds_path, clip_id, dataset)
     convert_waymo_bbox(output_wds_path, clip_id, dataset)
-    convert_waymo_lidar(output_wds_path, clip_id, dataset)
     convert_waymo_image(output_wds_path, clip_id, dataset, single_camera)
+    convert_waymo_lidar(output_wds_path, clip_id, dataset)
 
 @click.command()
 @click.option("--waymo_tfrecord_root", "-i", type=str, help="Waymo tfrecord root")
