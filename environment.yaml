@@ -19,3 +19,4 @@ dependencies:
     - pyproj
     - webdataset
     - imageio[ffmpeg]
+    - decord

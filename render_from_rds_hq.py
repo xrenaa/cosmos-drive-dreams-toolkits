@@ -13,6 +13,7 @@ import imageio as imageio_v1
 import torch
 import cv2
 import json
+import decord
 
 from tqdm import tqdm
 from pathlib import Path
@@ -28,7 +29,6 @@ from utils.multigpu_utils import setup
 
 INPUT_POSE_FPS = 30
 INPUT_LIDAR_FPS = 10
-TARGET_RENDER_FPS = 30
 CUT_LEN = 121
 OVERLAP = 9
 
@@ -51,10 +51,16 @@ def render_sample(
         camera_type: str,
         skip: list[str],
         output_folder: str,
+        post_training: bool = False,
         target_resolution: tuple[int, int] = (1280, 720),
         crop_resolution: tuple[int, int] = (1280, 704),
         accumulate_lidar_frames: int = 2,
 ):
+    if post_training: 
+        TARGET_RENDER_FPS = 10
+        CUT_LEN = 190 # for waymo post-training, we don't cut the video to 121
+    else: 
+        TARGET_RENDER_FPS = 30
     CAMERAS = settings['CAMERAS']
     minimap_types = settings['minimap_types']
 
@@ -155,7 +161,7 @@ def render_sample(
                 os.path.join(input_root, f"3d_{minimap_type}", f"{clip_id}.tar") for minimap_type in minimap_types
             ]
 
-            minimaps_projection_merged = np.zeros((frame_num, camera_model.height, camera_model.width, 3), dtype=np.uint8)
+            minimaps_projection_merged = np.zeros((len(valid_frame_ids), camera_model.height, camera_model.width, 3), dtype=np.uint8)
             for minimap_wds_file in minimap_wds_files:
                 minimap_data_wo_meta_info, minimap_name = simplify_minimap(minimap_wds_file)
 
@@ -163,7 +169,7 @@ def render_sample(
                 minimap_projection = create_minimap_projection(
                     minimap_name,
                     minimap_data_wo_meta_info,
-                    pose_this_cam_array,
+                    pose_this_cam_array[valid_frame_ids],
                     camera_model
                 )
                 minimaps_projection_merged = np.maximum(minimaps_projection_merged, minimap_projection)
@@ -192,8 +198,8 @@ def render_sample(
 
             # generate lidar depth
             lidar_depth_list = []
-            interp_rate = TARGET_RENDER_FPS // INPUT_LIDAR_FPS
-            for frame_idx in tqdm(range(frame_num)):
+            interp_rate = INPUT_POSE_FPS // INPUT_LIDAR_FPS
+            for frame_idx in tqdm(valid_frame_ids):
                 accumulate_idx = [min(max(0, frame_idx + i * interp_rate), frame_num-1) for i in range(-accumulate_lidar_frames, accumulate_lidar_frames+1)]
                 low_fps_frame_indices, _ = get_low_fps_indices(accumulate_idx, step=interp_rate)
 
@@ -206,6 +212,7 @@ def render_sample(
                 low_fps_frame_indices = [min(max_lidar_idx, idx) for idx in low_fps_frame_indices]
 
                 accumulated_points, original_bbox_dicts, moved_bbox_dicts = [], [], []
+
                 for i in range(len(accumulate_idx)):
                     lidar_points = lidar_data[f'{low_fps_frame_indices[i]:06d}.lidar_raw.npz']['xyz'].astype(np.float32).reshape(-1, 3)
 
@@ -259,10 +266,52 @@ def render_sample(
             if 'lidar' not in skip:
                 lidar_depth_vis = lidar_depth_vis[:, crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
 
+        # save the rgb video
+        if post_training:
+            # load rgb
+            rgb_file = os.path.join(input_root, f'{camera_type}_{camera_name}', f"{clip_id}.mp4")
+            # load all frames
+            vr = decord.VideoReader(rgb_file)
+            num_frames = len(vr)
+            all_frames = [vr[i] for i in range(num_frames)]
+            # resize all frames to target_resolution
+            all_frames_resized = []
+            for frame_read in all_frames:
+                try:
+                    frame = frame_read.asnumpy()
+                except AttributeError:
+                    frame = frame_read.numpy()
+                frame_resized = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
+                # center crop to crop_resolution
+                if crop_resolution != target_resolution:
+                    crop_w, crop_h = crop_resolution
+                    crop_x = (target_w - crop_w) // 2
+                    crop_y = (target_h - crop_h) // 2
+                    frame_resized = frame_resized[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
+                all_frames_resized.append(frame_resized)
+
         (output_root / camera_name / output_folder / clip_id).mkdir(parents=True, exist_ok=True)
-        for cur_idx, i in enumerate(range(3, len(minimaps_projection_merged), CUT_LEN - OVERLAP)):
-            if i + CUT_LEN > len(minimaps_projection_merged):
+        for cur_idx, i in enumerate(range(3, len(valid_frame_ids), CUT_LEN - OVERLAP)):
+            if i + CUT_LEN > len(valid_frame_ids):
                 continue
+
+            if post_training:
+                # save rgb video
+                rgb_writer = imageio_v1.get_writer(
+                    output_root / camera_name / output_folder / clip_id /f"{cur_idx}_rgb.mp4",
+                    fps=TARGET_RENDER_FPS,
+                    codec="libx264",
+                    macro_block_size=None,  # This makes sure num_frames is correct (by default it is rounded to 16x).
+                    ffmpeg_params=[
+                        "-crf", "18",     # Lower CRF for higher quality (0-51, lower is better)
+                        "-preset", "slow",   # Slower preset for better compression/quality
+                        "-pix_fmt", "yuv420p", # Ensures wide compatibility
+                    ],
+                )
+                rgb_cut = all_frames_resized[i:i+CUT_LEN]
+                for frame_idx in range(len(rgb_cut)):
+                    rgb_writer.append_data(rgb_cut[frame_idx])
+                rgb_writer.close()
             
             if 'hdmap' not in skip:
                 minimaps_projection_merged_cut = minimaps_projection_merged[i:i+CUT_LEN]
@@ -270,7 +319,7 @@ def render_sample(
                 # save HD map condition video
                 map_writer = imageio_v1.get_writer(
                     output_root / camera_name / output_folder / clip_id /f"{cur_idx}_hdmap_cond.mp4",
-                    fps=INPUT_POSE_FPS,
+                    fps=TARGET_RENDER_FPS,
                     codec="libx264",
                     macro_block_size=None,  # This makes sure num_frames is correct (by default it is rounded to 16x).
                     ffmpeg_params=[
@@ -289,7 +338,7 @@ def render_sample(
                 # save lidar condition video
                 lidar_writer = imageio_v1.get_writer(
                     output_root / camera_name / output_folder / clip_id /f"{cur_idx}_lidar_cond.mp4",
-                    fps=INPUT_POSE_FPS,
+                    fps=TARGET_RENDER_FPS,
                     codec="libx264",
                     macro_block_size=None,  # This makes sure num_frames is correct (by default it is rounded to 16x).
                     ffmpeg_params=[
@@ -309,8 +358,9 @@ def render_sample(
 @click.option("--dataset", "-d", type=str, default="rds_hq", help="the dataset name, 'rds_hq' or 'waymo', see the config in settings.json")
 @click.option("--camera_type", "-c", type=str, default="ftheta", help="the type of camera model, 'pinhole' or 'ftheta'")
 @click.option("--skip", "-s", multiple=True, help="can be 'hdmap' or 'lidar'")
-@click.option('--output_folder', '-f', type=str, default='render', help='Output folder')
-def main(input_root, output_root, dataset, camera_type, skip, output_folder):
+@click.option("--output_folder", "-f", type=str, default="render", help="Output folder")
+@click.option("--post_training", "-p", type=bool, default=False, help="if True, output the RGB video for post-training")
+def main(input_root, output_root, dataset, camera_type, skip, output_folder, post_training):
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     setup(local_rank, world_size)
@@ -318,6 +368,10 @@ def main(input_root, output_root, dataset, camera_type, skip, output_folder):
     if skip is not None:
         # assert skip is a list of 'hdmap' or 'bbox'
         assert all(s in ['hdmap', 'lidar'] for s in skip), "skip must be in ['hdmap', 'lidar']"
+
+    if post_training: # for post-training only
+        assert dataset == 'waymo', "post_training is only supported for waymo dataset"
+        assert camera_type == 'pinhole', "post_training is only supported for pinhole camera"
 
     # Load settings
     with open(f'config/dataset_{dataset}.json', 'r') as file:
@@ -336,7 +390,7 @@ def main(input_root, output_root, dataset, camera_type, skip, output_folder):
     # distribute the clip list to each process
     clip_list = clip_list[local_rank::world_size]
 
-    for clip_id in clip_list:
+    for clip_id in tqdm(clip_list):
         render_sample(
             input_root = input_root,
             output_root = output_root_p,
@@ -344,7 +398,8 @@ def main(input_root, output_root, dataset, camera_type, skip, output_folder):
             settings = settings,
             camera_type = camera_type,
             skip = skip,
-            output_folder = output_folder
+            output_folder = output_folder,
+            post_training = post_training,
         )
 
 if __name__ == "__main__":
