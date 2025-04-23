@@ -355,12 +355,13 @@ def render_sample(
 @click.command()
 @click.option("--input_root", '-i', type=str, help="the root folder of the input data")
 @click.option("--output_root", '-o', type=str, help="the root folder of the output data")
-@click.option("--dataset", "-d", type=str, default="rds_hq", help="the dataset name, 'rds_hq' or 'waymo', see the config in settings.json")
+@click.option("--dataset", "-d", type=str, default="rds_hq", help="the dataset name, 'rds_hq' or 'waymo' or 'waymo_mv', see the config in settings.json")
 @click.option("--camera_type", "-c", type=str, default="ftheta", help="the type of camera model, 'pinhole' or 'ftheta'")
 @click.option("--skip", "-s", multiple=True, help="can be 'hdmap' or 'lidar'")
 @click.option("--output_folder", "-f", type=str, default="render", help="Output folder")
 @click.option("--post_training", "-p", type=bool, default=False, help="if True, output the RGB video for post-training")
-def main(input_root, output_root, dataset, camera_type, skip, output_folder, post_training):
+@click.option("--num", "-n", type=int, default=-1, help="num clips to process")
+def main(input_root, output_root, dataset, camera_type, skip, output_folder, post_training, num):
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     setup(local_rank, world_size)
@@ -370,7 +371,7 @@ def main(input_root, output_root, dataset, camera_type, skip, output_folder, pos
         assert all(s in ['hdmap', 'lidar'] for s in skip), "skip must be in ['hdmap', 'lidar']"
 
     if post_training: # for post-training only
-        assert dataset == 'waymo', "post_training is only supported for waymo dataset"
+        assert dataset in ['waymo', 'waymo_mv'], "post_training is only supported for waymo dataset"
         assert camera_type == 'pinhole', "post_training is only supported for pinhole camera"
 
     # Load settings
@@ -382,7 +383,9 @@ def main(input_root, output_root, dataset, camera_type, skip, output_folder, pos
     output_root_p = Path(output_root)
     clip_list = (input_root_p / 'pose').rglob('*.tar')
     clip_list = [c.stem for c in clip_list]
-    
+    if num > 0:
+        clip_list = clip_list[:num]
+
     # shuffle the clip list
     np.random.seed(0)
     np.random.shuffle(clip_list)
