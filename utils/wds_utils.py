@@ -17,7 +17,7 @@ def get_sample(url):
     if isinstance(url, Path):
         url = url.as_posix()
         
-    dataset = WebDataset(url, nodesplitter=non_empty).decode()
+    dataset = WebDataset(url, nodesplitter=non_empty, workersplitter=None, shardshuffle=False).decode()
     return next(iter(dataset))
 
 def write_to_tar(sample, output_file):

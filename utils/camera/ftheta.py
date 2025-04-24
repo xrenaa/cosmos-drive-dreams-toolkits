@@ -256,12 +256,13 @@ class FThetaCamera(CameraBase):
             height (int): the height of the image.
             is_bw_poly (bool): whether the poly is bw poly
             poly (np.ndarray): the polynomial of the FTheta model. Usually 5 coefficients.
+            device (str): the device to use. if None, use cuda if available, otherwise cpu.
         """
-        self._rescale_width: int | None = None
-        self._rescale_height: int | None = None
         self._center = np.asarray([cx, cy], dtype=np.float32)
         self._width = int(width)
         self._height = int(height)
+        self.device = device if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.dtype = dtype
 
         if is_bw_poly:
             self._bw_poly = Polynomial(poly)
@@ -280,19 +281,36 @@ class FThetaCamera(CameraBase):
         self._intrinsics = np.array([cx, cy, width, height, *poly, 1 if is_bw_poly else 0], dtype=np.float32)
 
         self._update_calibrated_camera()
+        self._cache_torch_tensors()
 
-        if device is None:
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.device = device
-        self.dtype = dtype
 
-    @property
-    def is_rescaled(self):
-        return self._rescale_width is not None and self._rescale_height is not None
+    def _cache_torch_tensors(self):
+        # caches in torch
+        self._max_ray_angle_torch = torch.tensor(self._max_ray_angle, dtype=self.dtype, device=self.device)
+        self._fw_poly_torch = torch.tensor(self._fw_poly.coef, dtype=self.dtype, device=self.device)
+        self._fw_poly_powers_torch = torch.arange(len(self._fw_poly_torch), dtype=self.dtype, device=self.device)
+        self._max_ray_distortion_torch = torch.tensor(self._max_ray_distortion, dtype=self.dtype, device=self.device)
+        self._center_torch = torch.tensor(self._center, dtype=self.dtype, device=self.device)
 
-    def rescale(self, width: int, height: int):
-        self._rescale_width = width
-        self._rescale_height = height
+
+    def rescale(self, ratio: float):
+        self._width = int(self._width * ratio)
+        self._height = int(self._height * ratio)
+        self._center = self._center * ratio
+
+        # update backward poly. if ratio = 0.5, bw_poly_coef[i] = bw_poly_coef[i] * (2 ** i)
+        bw_poly_coef = self._bw_poly.coef
+        for i in range(len(bw_poly_coef)):
+            bw_poly_coef[i] = bw_poly_coef[i] * (1 / ratio) ** i
+
+        self._bw_poly = Polynomial(bw_poly_coef)
+        self._fw_poly = self._compute_fw_poly()
+        self._intrinsics = np.array([self._center[0], self._center[1], self._width, self._height, *bw_poly_coef, 1], dtype=np.float32)
+
+        # update cached torch tensors
+        self._update_calibrated_camera()
+        self._cache_torch_tensors()
+
 
     @staticmethod
     def get_ftheta_parameters_from_json(rig_dict: Dict[str, Any]) -> Tuple[Any]:
@@ -366,17 +384,16 @@ class FThetaCamera(CameraBase):
     @property
     def width(self) -> int:
         """Returns the width of the sensor."""
-        return self._width if not self.is_rescaled else self._rescale_width
+        return self._width
 
     @property
     def height(self) -> int:
         """Returns the height of the sensor."""
-        return self._height if not self.is_rescaled else self._rescale_height
+        return self._height
 
     @property
     def center(self) -> np.ndarray:
         """Returns the center of the sensor."""
-        assert not self.is_rescaled
         return self._center
 
     @property
@@ -387,7 +404,6 @@ class FThetaCamera(CameraBase):
             np.ndarray: an array of intrinsics. The ordering is "cx, cy, width, height, poly, is_bw_poly".
                 dtype is np.float32.
         """
-        assert not self.is_rescaled
         return self._intrinsics
 
     def __str__(self):
@@ -431,6 +447,7 @@ class FThetaCamera(CameraBase):
 
         self._max_ray_distortion = np.asarray([val, dval], dtype=np.float32)
 
+
     def _compute_fw_poly(self):
         """Computes the forward polynomial for this camera.
 
@@ -456,7 +473,7 @@ class FThetaCamera(CameraBase):
             [np.float32(val) if i > 0 else 0 for i, val in enumerate(coeffs)]
         )
 
-    def _get_rays(self) -> torch.Tensor:
+    def _get_rays_impl(self) -> torch.Tensor:
         """
         Returns:
             rays: (H, W, 3), normalized camera rays in opencv convention
@@ -478,7 +495,7 @@ class FThetaCamera(CameraBase):
         return rays
 
 
-    def pixel2ray(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def pixel2ray_np(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Backproject 2D pixels into 3D rays.
 
         Args:
@@ -492,11 +509,6 @@ class FThetaCamera(CameraBase):
         # Make sure x is n x 2
         if np.ndim(x) == 1:
             x = x[np.newaxis, :]
-
-        if self.is_rescaled:
-            x = x * np.array(
-                [self._width / self._rescale_width, self._height / self._rescale_height]
-            ).astype(np.float32)
 
         # Fix the type
         x = x.astype(np.float32)
@@ -518,8 +530,49 @@ class FThetaCamera(CameraBase):
         # if constant coefficient of bwPoly is non-zero,
         # the resulting ray might not be normalized.
         return rays, valid
+
+
+    def pixel2ray_torch(self, pixels: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            pixels (torch.Tensor): pixel coordinates. shape: (M, 2)
+
+        Returns:
+            rays (torch.Tensor): ray direction vector. shape: (M, 3)
+            valid (torch.Tensor): bool flag indicating the validity of each backprojected pixel. shape: (M,)
+        """
+        # 确保输入形状为 (n_points, 2)
+        if pixels.dim() == 1:
+            pixels = pixels.unsqueeze(0)
+
+        # Calculate the offset relative to the optical center
+        xd = pixels - self._center_torch
+        xd_norm = torch.norm(xd, dim=1, keepdim=False)
+        
+        # Calculate angle
+        alpha = torch.zeros_like(xd_norm)
+        for i, coef in enumerate(self._bw_poly.coef):
+            alpha += coef * torch.pow(xd_norm, i)
+            
+        sin_alpha = torch.sin(alpha)
+
+        # Calculate ray direction
+        valid = (xd_norm > torch.finfo(self.dtype).eps).squeeze()
+        rays = torch.empty(pixels.shape[0], 3, dtype=self.dtype, device=pixels.device)
+        
+        # For effective point calculation rays
+        rays[valid, 0] = sin_alpha[valid] * xd[valid, 0] / xd_norm[valid]
+        rays[valid, 1] = sin_alpha[valid] * xd[valid, 1] / xd_norm[valid] 
+        rays[valid, 2] = torch.cos(alpha[valid])
+
+        # For the invalid point set to (0,0,1)
+        rays[~valid, 0] = 0
+        rays[~valid, 1] = 0
+        rays[~valid, 2] = 1
+
+        return rays, valid
     
-    def ray2pixel(self, rays: np.ndarray) -> np.ndarray:
+    def ray2pixel_np(self, rays: np.ndarray) -> np.ndarray:
         """Project 3D rays to 2D pixel coordinates.
 
         Args:
@@ -534,13 +587,14 @@ class FThetaCamera(CameraBase):
 
         # Fix the type
         rays = rays.astype(np.float32)
+
         # TODO(restes) combine 2 and 3 column norm for rays?
         xy_norm = np.linalg.norm(rays[:, :2], axis=1, keepdims=True)
         cos_alpha = rays[:, 2:] / np.linalg.norm(rays, axis=1, keepdims=True)
 
         alpha = np.empty_like(cos_alpha)
         cos_alpha_condition = np.logical_and(
-            cos_alpha > np.float32(-1.0), cos_alpha < np.float32(1.0)
+            cos_alpha > -1, cos_alpha < 1
         ).squeeze()
         alpha[cos_alpha_condition] = np.arccos(cos_alpha[cos_alpha_condition])
         alpha[~cos_alpha_condition] = xy_norm[~cos_alpha_condition]
@@ -548,6 +602,7 @@ class FThetaCamera(CameraBase):
         delta = np.empty_like(cos_alpha)
         alpha_cond = alpha <= self._max_ray_angle
         delta[alpha_cond] = self._fw_poly(alpha[alpha_cond])
+
         # For outside the model (which need to do linear extrapolation)
         delta[~alpha_cond] = (
             self._max_ray_distortion[0]
@@ -558,30 +613,74 @@ class FThetaCamera(CameraBase):
         bad_norm = xy_norm <= 0
         xy_norm[bad_norm] = 1
         delta[bad_norm] = 0
+
         # compute pixel relative to center
         scale = delta / xy_norm
         pixel = scale * rays
 
         # Handle the edge cases (ray along image plane normal)
-        edge_case_cond = (xy_norm <= np.float32(0.0)).squeeze()
+        edge_case_cond = (xy_norm <= 0).squeeze()
         pixel[edge_case_cond, :] = rays[edge_case_cond, :]
         result = pixel[:, :2] + self._center
 
-        if self.is_rescaled:
-            result = result * np.array(
-                [self._rescale_width / self._width, self._rescale_height / self._height]
-            ).astype(np.float32)
+        return result
+    
+    def ray2pixel_torch(self, rays: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            rays (torch.Tensor): ray direction vector. shape: (M, 3)
+
+        Returns:
+            result (torch.Tensor): projected pixel coordinates. shape: (M, 2)
+        """
+        # ensure input shape is (n_points, 3)
+        if rays.dim() == 1:
+            rays = rays.unsqueeze(0)
+
+        # dtype and device
+        rays = rays.to(dtype=self.dtype, device=self.device)
+        
+        xy_norm = torch.norm(rays[:, :2], dim=1, keepdim=True)
+        cos_alpha = rays[:, 2:] / torch.norm(rays, dim=1, keepdim=True)
+
+        alpha = torch.empty_like(cos_alpha)
+        cos_alpha_condition = torch.logical_and(
+            cos_alpha > -1,
+            cos_alpha < 1
+        ).squeeze()
+        alpha[cos_alpha_condition] = torch.acos(cos_alpha[cos_alpha_condition])
+        alpha[~cos_alpha_condition] = xy_norm[~cos_alpha_condition]
+
+        delta = torch.empty_like(cos_alpha)
+        alpha_cond = alpha <= self._max_ray_angle_torch
+        
+        # Polynomial computation
+        alpha_powers = alpha[alpha_cond].unsqueeze(-1) ** self._fw_poly_powers_torch
+        delta[alpha_cond] = torch.sum(self._fw_poly_torch * alpha_powers, dim=-1, keepdim=False)
+        
+        # For outside the model (which need to do linear extrapolation)
+        delta[~alpha_cond] = (
+            self._max_ray_distortion_torch[0]
+            + (alpha[~alpha_cond] - self._max_ray_angle_torch) * self._max_ray_distortion_torch[1]
+        )
+
+        # Determine the bad points with a norm of zero, and avoid division by zero
+        bad_norm = xy_norm <= 0
+        xy_norm[bad_norm] = 1
+        delta[bad_norm] = 0
+        
+        # compute pixel relative to center
+        scale = delta / xy_norm
+        pixel = scale * rays
+
+        # handle edge cases (rays along image plane normal)
+        edge_case_cond = (xy_norm <= 0).squeeze()
+        pixel[edge_case_cond, :] = rays[edge_case_cond, :]
+        
+        result = pixel[:, :2] + self._center_torch
 
         return result
     
-    def ray2pixel_np(self, rays: np.ndarray) -> np.ndarray:
-        # call ray2pixel
-        return self.ray2pixel(rays)
-    
-    def ray2pixel_torch(self, rays: torch.Tensor) -> torch.Tensor:
-        device = rays.device
-        dtype = rays.dtype
-        return torch.tensor(self.ray2pixel(rays.cpu().numpy()), device=device, dtype=dtype)
 
     def _get_pixel_fov(self, pt: np.ndarray) -> float:
         """Gets the FOV for a given point. Used internally for FOV computation.
@@ -595,6 +694,7 @@ class FThetaCamera(CameraBase):
         ray, _ = self.pixel2ray(pt)
         fov = np.arctan2(np.linalg.norm(ray[:, :2], axis=1), ray[:, 2])
         return fov
+
 
     def _compute_fov(self):
         """Computes the FOV of this camera model."""
@@ -615,6 +715,7 @@ class FThetaCamera(CameraBase):
         self._horizontal_fov = fov_left + fov_right
         self._compute_max_angle()
 
+
     def _compute_max_angle(self):
         """Computes the maximum ray angle for this camera."""
         max_x = self._width - 1
@@ -628,6 +729,7 @@ class FThetaCamera(CameraBase):
             max(self._get_pixel_fov(p[0, ...]), self._get_pixel_fov(p[1, ...])),
             max(self._get_pixel_fov(p[2, ...]), self._get_pixel_fov(p[3, ...])),
         )
+
 
     def is_ray_inside_fov(self, ray: np.ndarray) -> bool:
         """Determines whether a given ray is inside the FOV of this camera.

@@ -17,13 +17,11 @@ from scipy.optimize import curve_fit
 
 def interpolate_polyline_to_points(polyline, segment_interval=0.025):
     """
-    Args:
-        polyline : numpy.ndarray
-            shape (N, 3) or list of points 
+    polyline:
+        numpy.ndarray, shape (N, 3) or list of points 
 
     Returns:
-        points : numpy array, 
-            interpolated points from the polyline
+        points: numpy array, shape (interpolate_num*N, 3)
     """
     def interpolate_points(previous_vertex, vertex):
         """
@@ -32,8 +30,7 @@ def interpolate_polyline_to_points(polyline, segment_interval=0.025):
             vertex: (x, y, z)
 
         Returns:
-            points : numpy array, 
-                interpolated points between previous_vertex and vertex, make sure previous_vertex and vertex are included
+            points: numpy array, shape (interpolate_num, 3)
         """
         interpolate_num = int(np.linalg.norm(np.array(vertex) - np.array(previous_vertex)) / segment_interval)
         interpolate_num = max(interpolate_num, 2)
@@ -42,7 +39,9 @@ def interpolate_polyline_to_points(polyline, segment_interval=0.025):
         x = np.linspace(previous_vertex[0], vertex[0], num=interpolate_num)
         y = np.linspace(previous_vertex[1], vertex[1], num=interpolate_num)
         z = np.linspace(previous_vertex[2], vertex[2], num=interpolate_num)
-        return np.stack([x, y, z], axis=1)
+
+        # remove the last point, we will include it in the next interpolation
+        return np.stack([x, y, z], axis=1)[:-1] 
 
     points = []
     previous_vertex = None
@@ -53,6 +52,9 @@ def interpolate_polyline_to_points(polyline, segment_interval=0.025):
         else:
             points.extend(interpolate_points(previous_vertex, vertex))
             previous_vertex = vertex
+
+    # add the last point
+    points.append(polyline[-1])
 
     return np.array(points)
 

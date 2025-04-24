@@ -23,7 +23,17 @@ class PinholeCamera(CameraBase):
 
         if device is None:
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         self.device = device
+        self._intrinsics = np.array([fx, fy, cx, cy, w, h], dtype=np.float32)
+        self.cache_torch_and_np_intrinsics()
+
+    def cache_torch_and_np_intrinsics(self):
+        # cache intrinsics matrix
+        self.intrinsics_matrix_torch = self.get_intrinsics_matrix()
+        self.intrinsics_matrix_inv_torch = self.get_inv_intrinsics_matrix()
+        self.intrinsics_matrix_np = self.intrinsics_matrix_torch.cpu().numpy()
+        self.intrinsics_matrix_inv_np = self.intrinsics_matrix_inv_torch.cpu().numpy()
 
     @staticmethod
     def from_tensor(x: torch.Tensor):
@@ -41,6 +51,25 @@ class PinholeCamera(CameraBase):
     def height(self) -> int:
         return self.h
 
+    @property
+    def intrinsics(self) -> np.ndarray:
+        return self._intrinsics
+
+    def rescale(self, ratio_h: float, ratio_w: float = None):
+        if ratio_w is None:
+            ratio_w = ratio_h
+
+        self.w = int(self.w * ratio_w)
+        self.h = int(self.h * ratio_h)
+
+        self.fx = self.fx * ratio_w
+        self.fy = self.fy * ratio_h
+        self.cx = self.cx * ratio_w
+        self.cy = self.cy * ratio_h
+
+        self._intrinsics = np.array([self.fx, self.fy, self.cx, self.cy, self.w, self.h], dtype=np.float32)
+        self.cache_torch_and_np_intrinsics()
+        
     def get_fovx(self) -> float:
         """
         Returns:
@@ -70,7 +99,7 @@ class PinholeCamera(CameraBase):
         return torch.inverse(self.get_intrinsics_matrix())
 
 
-    def _get_rays(self) -> torch.Tensor:
+    def _get_rays_impl(self) -> torch.Tensor:
         """
         Returns:
             rays: (H, W, 3), normalized camera rays in opencv convention
@@ -80,6 +109,9 @@ class PinholeCamera(CameraBase):
         o ------> x (right)
         |
         v y (down)
+
+        Returns:
+            rays: (H, W, 3), normalized camera rays camera coordinate
         """
         u = torch.arange(self.w, dtype=torch.int32, device=self.device)
         v = torch.arange(self.h, dtype=torch.int32, device=self.device)
@@ -87,41 +119,72 @@ class PinholeCamera(CameraBase):
         uv_coords = torch.stack([u, v], dim=-1) # shape (H, W, 2)
         uv_coords_pad = torch.cat([uv_coords, torch.ones_like(uv_coords[..., :1])], dim=-1) # shape (H, W, 3)
 
-        intrinsics_matrix_inv = self.get_inv_intrinsics_matrix()
-        cam_coords_norm = intrinsics_matrix_inv @ uv_coords_pad.view(-1, 3).T.float()
+        cam_coords_norm = self.intrinsics_matrix_inv_torch @ uv_coords_pad.view(-1, 3).T.float()
         cam_coords_norm = cam_coords_norm.T.view(self.h, self.w, 3)
         rays = cam_coords_norm / cam_coords_norm.norm(dim=-1, keepdim=True)
 
         return rays
+        
 
     def ray2pixel_np(self, rays: np.ndarray) -> np.ndarray:
         """
         Args:
-            rays: (M, 3), camera rays in camera coordinate
+            rays: (M, 3), camera rays in camera coordinate (opencv convention)
         Returns:
-            uv_coords: (M, 2), pixel coordinates
+            pixel_coords: (M, 2), pixel coordinates, not normalized to (0, 1)
         """
         if len(rays.shape) == 1:
             rays = rays.reshape(1, -1)
         
-        intrinsics_matrix = self.get_intrinsics_matrix().cpu().numpy()
         rays_norm = rays / rays[:, 2:3] # normalize the rays, image plane is z=1
-        uv_coords = np.einsum('ij,nj->ni', intrinsics_matrix, rays_norm)[:, :2]
+        pixel_coords = np.einsum('ij,nj->ni', self.intrinsics_matrix_np, rays_norm)[:, :2]
 
-        return uv_coords
+        return pixel_coords
+
 
     def ray2pixel_torch(self, rays: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            rays: (N, 3), camera rays in camera coordinate
+            rays: (N, 3), camera rays in camera coordinate (opencv convention)
         Returns:
-            uv_coords: (N, 2), pixel coordinates
+            pixel_coords: (N, 2), pixel coordinates, not normalized to (0, 1)
         """
         if len(rays.shape) == 1:
             rays = rays.unsqueeze(0)
 
-        intrinsics_matrix = self.get_intrinsics_matrix()
         rays_norm = rays / rays[:, 2:3] # normalize the rays, image plane is z=1
-        uv_coords = torch.einsum('ij,nj->ni', intrinsics_matrix, rays_norm)[:, :2]
+        pixel_coords = torch.einsum('ij,nj->ni', self.intrinsics_matrix_torch, rays_norm)[:, :2]
 
-        return uv_coords 
+        return pixel_coords
+
+
+    def pixel2ray_np(self, pixel_coords: np.ndarray) -> np.ndarray:
+        """
+        Args:
+            pixel_coords: (M, 2), pixel coordinates, not normalized to (0, 1)
+        Returns:
+            rays: (M, 3), camera rays in camera coordinate (opencv convention)
+        """
+        if len(pixel_coords.shape) == 1:
+            pixel_coords = pixel_coords.reshape(1, -1)
+
+        pixel_coords_pad = np.concatenate([pixel_coords, np.ones_like(pixel_coords[..., :1])], axis=-1) # shape (M, 3)
+        rays = np.einsum('ij,nj->ni', self.intrinsics_matrix_np, pixel_coords_pad)[:, :3]
+
+        return rays
+
+
+    def pixel2ray_torch(self, pixel_coords: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            pixel_coords: (N, 2), pixel coordinates, not normalized to (0, 1)
+        Returns:
+            rays: (N, 3), camera rays in camera coordinate (opencv convention)
+        """
+        if len(pixel_coords.shape) == 1:
+            pixel_coords = pixel_coords.unsqueeze(0)
+
+        pixel_coords_pad = torch.cat([pixel_coords, torch.ones_like(pixel_coords[..., :1])], dim=-1) # shape (N, 3)
+        rays = torch.einsum('ij,nj->ni', self.intrinsics_matrix_torch, pixel_coords_pad)[:, :3]
+
+        return rays

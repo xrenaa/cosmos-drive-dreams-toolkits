@@ -38,7 +38,7 @@ def create_bbox_projection(all_object_info, camera_poses, valid_frame_ids, camer
     """
     bbox_projections = []
 
-    for i in tqdm(valid_frame_ids):
+    for i in valid_frame_ids:
         current_object_info = all_object_info[f"{i:06d}.all_object_info.json"]
 
         polylines_cars = []
@@ -46,12 +46,6 @@ def create_bbox_projection(all_object_info, camera_poses, valid_frame_ids, camer
         polylines_pedestrians = []
         polylines_cyclists = []
         polylines_others = []
-
-        polygons_cars = []
-        polygons_trucks = []
-        polygons_pedestrians = []
-        polygons_cyclists = []
-        polygons_others = []
 
         # sort tracking ids. avoid jittering when drawing bbox.
         tracking_ids = list(current_object_info.keys())

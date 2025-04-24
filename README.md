@@ -34,20 +34,28 @@ git lfs install
 git clone git@hf.co:datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example
 ```
 
-## Usage
+## Visualize Dataset
+You can use `visualize_rds_hq.py` to visualize the RDS-HQ dataset.
+```bash
+python visualize_rds_hq.py -i <RDS_HQ_FOLDER> -c <CLIP_ID>
+```
+This python script will launch a [viser](https://github.com/nerfstudio-project/viser) server to visualize the 3D HD map world with dynamic bounding boxes. You can use 
+- `w a s d` to control camera's position
+- `q e` to control camera's z-axis coordinate
+
+![viser](./assets/viser.png)
+
+> [!NOTE]
+> You can run this script in a server with VS Code + remote-ssh plugin. VS Code will automatically forward the port of viser to the local host. 
+
+
+## Rendering Cosmos Input Control Video
 You can use `render_from_rds_hq.py` to render the HD map + bounding box / LiDAR condition videos from RDS-HQ dataset. GPU is required for rendering LiDAR.
 ```bash
-# single process
 python render_from_rds_hq.py -i <RDS_HQ_FOLDER> -o <OUTPUT_FOLDER> [--skip hdmap] [--skip lidar]
 ```
-You can add `--skip hdmap` or `--skip lidar` to skip the rendering of HD map and LiDAR, respectively.
+This will automatically launch multiple jobs based on [Ray](https://docs.ray.io/en/releases-2.4.0/index.html). If you want to use single process (e.g. for debugging), you can set `USE_RAY=False` in `render_from_rds_hq.py`. You can add `--skip hdmap` or `--skip lidar` to skip the rendering of HD map and LiDAR, respectively. 
 
-You can also run this script in multiple processes to speed up the rendering process.
-```bash
-# multiple processes
-torchrun --nproc_per_node=32 render_from_rds_hq.py -i <RDS_HQ_FOLDER> -o <OUTPUT_FOLDER> [--skip hdmap] [--skip lidar]
-```
-Set `nproc_per_node` to the number of processes you want to use.
 **RDS-HQ Rendering Results**
 ![RDS-HQ Rendering Results](./assets/rds_hq_render.png)
 
@@ -144,6 +152,18 @@ Set `nproc_per_node` to the number of processes you want to use.
   <img src="assets/waymo_example.gif" alt=""  width="1100" />
 </div>
 
+
+## Generate Novel Ego Trajectory
+You can also use `visualize_rds_hq.py` to generate novel trajectories.
+```bash
+python visualize_rds_hq.py -i <RDS_HQ_FOLDER> [-np <NOVEL_POSE_FOLDER_NAME>]
+```
+Here `<NOVEL_POSE_FOLDER_NAME>` is the folder name for novel pose data. By default, it will be `novel_pose`. 
+
+Using the panel on the right, you record keyframe poses (make sure include the first frame and the last frame), and the script will interpolate all intermediate poses and save them as a `.tar` file in the `novel_pose` folder at `<RDS_HQ_FOLDER>`. Then you can pass `--novel_pose_folder <NOVEL_POSE_FOLDER_NAME>` to the rendering script `render_from_rds_hq.py` to use the novel ego trajectory.
+```bash
+python render_from_rds_hq.py -i <RDS_HQ_FOLDER> -o <OUTPUT_FOLDER> -np <NOVEL_POSE_FOLDER_NAME>
+```
 
 
 ## Prompting During Inference

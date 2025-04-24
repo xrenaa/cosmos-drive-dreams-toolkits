@@ -7,33 +7,16 @@
 # license agreement from NVIDIA CORPORATION & AFFILIATES is strictly prohibited.
 
 import numpy as np
-import torch
+import json
 
+from pathlib import Path
 from scipy.spatial.transform import Rotation as R
 from termcolor import cprint
 from utils.wds_utils import get_sample
 
-lanelines_RGB = [98, 183, 249]
-lanes_RGB = [56, 103, 221]
-poles_RGB = [66, 40, 144]
-road_boundaries_RGB = [200, 36, 35]
-wait_lines_RGB = [185, 63, 34]
-crosswalks_RGB = [206, 131, 63]
-road_markings_RGB = [126, 204, 205]
-traffic_signs_RGB = [131, 175, 155]
-traffic_lights_RGB = [252, 157, 155]
+MINIMAP_TO_RGB = json.load(open(Path(__file__).parent.parent / 'config' /'hdmap_color_config.json'))
 
-MINIMAP_TO_RGB = {
-    'lanelines': lanelines_RGB,
-    'lanes': lanes_RGB,
-    'poles': poles_RGB,
-    'road_boundaries': road_boundaries_RGB,
-    'wait_lines': wait_lines_RGB,
-    'crosswalks': crosswalks_RGB,
-    'road_markings': road_markings_RGB,
-    'traffic_signs': traffic_signs_RGB,
-    'traffic_lights': traffic_lights_RGB,
-}
+MINIMAP_TO_TYPE = json.load(open(Path(__file__).parent.parent / 'config' /'hdmap_type_config.json'))
 
 MINIMAP_TO_SEMANTIC_LABEL = {
     'lanelines': 5,
@@ -70,21 +53,11 @@ def get_type_from_name(minimap_name):
     Returns:
         minimap_type: str, type of the minimap
     """
-    if minimap_name == 'crosswalks' or \
-        minimap_name == 'road_markings':
-        return 'polygon'
-    elif minimap_name == 'lanelines' or \
-         minimap_name == 'lanes' or \
-         minimap_name == 'road_boundaries' or \
-         minimap_name == 'wait_lines' or \
-         minimap_name == 'poles':
-        return 'polyline'
-    elif minimap_name == 'traffic_signs' or \
-         minimap_name == 'traffic_lights':
-        return 'cuboid3d'
+    if minimap_name in MINIMAP_TO_TYPE:
+        return MINIMAP_TO_TYPE[minimap_name]
     else:
-        raise ValueError("Invalid minimap name")
-    
+        raise ValueError(f"Invalid minimap name: {minimap_name}")
+
 
 def cuboid3d_to_polyline(cuboid3d_eight_vertices):
     """
@@ -167,35 +140,32 @@ def create_minimap_projection(
         minimaps_projection: np.ndarray, 
             shape (N, H, W, 3), dtype=np.uint8, projected minimap data across N frames
     """
-    minimaps_projection = np.zeros((camera_poses.shape[0], camera_model.height, camera_model.width, 3), dtype=np.uint8)
-
     image_height, image_width = camera_model.height, camera_model.width
     cprint(f"Processing minimap {minimap_name} with shape {image_height}x{image_width}", 'green')
 
-    minimaps_projection_list = [] # N frames
     minimap_type = get_type_from_name(minimap_name)
 
 
     if minimap_type == 'polygon':
-        projection_image = camera_model.draw_hull_depth(
+        projection_images = camera_model.draw_hull_depth(
             camera_poses,
             minimap_data_wo_meta_info,
             colors=np.array(MINIMAP_TO_RGB[minimap_name]),
         )
     elif minimap_type == 'polyline':
         if minimap_name == 'lanelines' or minimap_name == 'road_boundaries':
-            segment_interval = 0.5
+            segment_interval = 0.8
         else:
             segment_interval = 0
 
-        projection_image = camera_model.draw_line_depth(
+        projection_images = camera_model.draw_line_depth(
             camera_poses,
             minimap_data_wo_meta_info,
             colors=np.array(MINIMAP_TO_RGB[minimap_name]),
             segment_interval=segment_interval,
         )
     elif minimap_type == 'cuboid3d':
-        projection_image = camera_model.draw_hull_depth(
+        projection_images = camera_model.draw_hull_depth(
             camera_poses,
             minimap_data_wo_meta_info,
             colors=np.array(MINIMAP_TO_RGB[minimap_name]),
@@ -203,7 +173,7 @@ def create_minimap_projection(
     else:
         raise ValueError(f"Invalid minimap type: {minimap_type}")
     
-    return projection_image
+    return projection_images
 
 
 def cuboid3d_update_vertices_remove_others(cuboid3d):
