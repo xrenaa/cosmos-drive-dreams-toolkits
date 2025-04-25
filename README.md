@@ -69,7 +69,7 @@ This will automatically launch multiple jobs based on [Ray](https://docs.ray.io/
 > If you're interested, we offer [documentation](./assets/ftheta.pdf) that explains the NVIDIA f-theta camera in detail.
 
 
-The output folder structure will be like this:
+The output folder structure will be like this. Note that `rgb` will only be generated when setting `--post_training true`.
 ```bash
 <OUTPUT_FOLDER>
 ├── camera_name_1
