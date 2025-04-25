@@ -36,20 +36,93 @@ class CameraBase:
     @abstractmethod
     def ray2pixel_np(self, rays: np.ndarray) -> np.ndarray:
         raise NotImplementedError
+
+    @abstractmethod
+    def pixel2ray_torch(self, pixels: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
     
     @abstractmethod
-    def _get_rays(self) -> torch.Tensor:
+    def pixel2ray_np(self, pixels: np.ndarray) -> np.ndarray:
         raise NotImplementedError
-
-    def _get_rays_from_cached(self) -> torch.Tensor:
+    
+    def ray2pixel(self, rays: Union[torch.Tensor, np.ndarray]) -> Union[torch.Tensor, np.ndarray]:
         """
-        This provides 2x speed up for f-theta semantic buffer generation.
+        Args:
+            rays: (M, 3), camera rays in camera coordinate (opencv convention)
+        Returns:
+            pixel_coords: (M, 2), pixel coordinates, not normalized
+
+             z (front)
+            /    
+            o ------> x (right)
+            |
+            v y (down)
+        """
+        if isinstance(rays, torch.Tensor):
+            return self.ray2pixel_torch(rays)
+        else:
+            return self.ray2pixel_np(rays)
+    
+    def pixel2ray(self, pixels: Union[torch.Tensor, np.ndarray]) -> Union[torch.Tensor, np.ndarray]:
+        """
+        Args:
+            pixels: (M, 2), pixel coordinates, not normalized to (0, 1)
+        Returns:
+            rays: (M, 3), camera rays in camera coordinate (opencv convention)
+
+             z (front)
+            /    
+            o ------> x (right)
+            |
+            v y (down)
+        """
+        if isinstance(pixels, torch.Tensor):
+            return self.pixel2ray_torch(pixels)
+        else:
+            return self.pixel2ray_np(pixels)
+
+    def pixel2uv(self, pixels: Union[torch.Tensor, np.ndarray]) -> Union[torch.Tensor, np.ndarray]:
+        """
+        Args:
+            pixels: (M, 2), pixel coordinates, not normalized to (0, 1)
+        Returns:
+            uv_coords: (M, 2), pixel coordinates, normalized to (0, 1)
+        """
+        pixels_normalized = pixels.copy() if isinstance(pixels, np.ndarray) else pixels.clone()
+        pixels_normalized[:, 0] = pixels[:, 0] / self.width
+        pixels_normalized[:, 1] = pixels[:, 1] / self.height
+        return pixels_normalized
+    
+    @abstractmethod
+    def _get_rays_impl(self) -> torch.Tensor:
+        raise NotImplementedError
+        
+    def get_rays(self) -> torch.Tensor:
+        """
+        Returns:
+            rays: (H, W, 3), normalized camera rays camera coordinate (opencv convention)
         """
         if not hasattr(self, 'rays_cached'):
-            self.rays_cached = self._get_rays()
+            self.rays_cached = self._get_rays_impl()
         return self.rays_cached
-    
-    def transform_points_torch(self, points: torch.Tensor, tfm: torch.Tensor) -> torch.Tensor:
+
+    def get_rays_posed(self, camera_poses: torch.Tensor):
+        """
+        Args:
+            camera_poses: (N, 4, 4)
+        Returns:
+            ray_o: (N, H, W, 3), camera origin
+            ray_d: (N, H, W, 3), camera rays
+        """
+        rays_in_cam = self.get_rays() # shape (H, W, 3)
+        rays_d_in_world = torch.einsum('bij,hwj->bhwi', camera_poses[:, :3, :3], rays_in_cam) # shape (N, H, W, 3)
+        rays_o_in_world = camera_poses[:, :3, 3].unsqueeze(-2).unsqueeze(-2).expand_as(rays_d_in_world) # shape (N, H, W, 3)
+        
+        return rays_o_in_world, rays_d_in_world
+
+
+    @staticmethod
+    def transform_points_torch(points: torch.Tensor, tfm: torch.Tensor) -> torch.Tensor:
         """
         Args:
             points: (M, 3)
@@ -60,7 +133,8 @@ class CameraBase:
         transformed_points = tfm[:3, :3] @ points.T + tfm[:3, 3].unsqueeze(-1)
         return transformed_points.T
     
-    def transform_points_np(self, points: np.ndarray, tfm: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def transform_points_np(points: np.ndarray, tfm: np.ndarray) -> np.ndarray:
         """
         Args:
             points: (M, 3)
@@ -70,22 +144,21 @@ class CameraBase:
         """
         transformed_points = tfm[:3, :3] @ points.T + tfm[:3, 3].reshape(-1, 1)
         return transformed_points.T
-    
-    def _get_rays_posed(self, camera_poses: torch.Tensor):
-        """
-        Args:
-            camera_poses: (N, 4, 4)
-        Returns:
-            ray_o: (N, H, W, 3), camera origin
-            ray_d: (N, H, W, 3), camera rays
-        """
-        rays_in_cam = self._get_rays_from_cached() # shape (H, W, 3)
-        rays_d_in_world = torch.einsum('bij,hwj->bhwi', camera_poses[:, :3, :3], rays_in_cam) # shape (N, H, W, 3)
-        rays_o_in_world = camera_poses[:, :3, 3].unsqueeze(-2).unsqueeze(-2).expand_as(rays_d_in_world) # shape (N, H, W, 3)
-        
-        return rays_o_in_world, rays_d_in_world
 
-    def _clip_polyline_to_image_plane(self, points_in_cam: np.ndarray) -> np.ndarray:
+
+    @staticmethod
+    def transform_points(points: Union[torch.Tensor, np.ndarray], tfm: Union[torch.Tensor, np.ndarray]) -> Union[torch.Tensor, np.ndarray]:
+        # assert points and tfm are the same type
+        assert isinstance(points, type(tfm))
+
+        if isinstance(points, torch.Tensor):
+            return CameraBase.transform_points_torch(points, tfm)
+        else:
+            return CameraBase.transform_points_np(points, tfm)
+
+
+    @staticmethod
+    def _clip_polyline_to_image_plane(points_in_cam: np.ndarray) -> np.ndarray:
         """
         Args:
             points_in_cam: np.ndarray
@@ -129,6 +202,7 @@ class CameraBase:
         cam_coords_cliped = np.stack(cam_coords_cliped, axis=0) # shape (M', 3)
         
         return cam_coords_cliped
+
         
     """
     Drawing related functions
@@ -266,17 +340,21 @@ class CameraBase:
         for camera_to_world in camera_poses:
             canvas = np.zeros((self.height, self.width, 3), dtype=np.uint8)
             H, W = canvas.shape[:2]
-
+            world_to_camera = np.linalg.inv(camera_to_world)
             for polyline in polylines:
                 if len(polyline) < 2:
                     continue
+
                 if isinstance(polyline, list):
                     polyline = np.array(polyline)
+
+                if (self.transform_points_np(polyline, world_to_camera)[:, 2] < 0).all():
+                    continue
 
                 if segment_interval > 0:
                     polyline = interpolate_polyline_to_points(polyline, segment_interval)
                 
-                points_in_cam = self.transform_points_np(polyline, np.linalg.inv(camera_to_world))
+                points_in_cam = self.transform_points_np(polyline, world_to_camera)
                 uv_coords = self.ray2pixel_np(points_in_cam)
                 depth = points_in_cam[:, 2]
 
@@ -381,6 +459,10 @@ class CameraBase:
                     continue
                 
                 points_in_cam = self.transform_points_np(hull, np.linalg.inv(camera_to_world))
+
+                if (points_in_cam[:, 2] < 0).all():
+                    continue
+
                 uv_coords = self.ray2pixel_np(points_in_cam).astype(np.int32)
                 depth = points_in_cam[:, 2]
                 valid_depth_mask = depth > 0

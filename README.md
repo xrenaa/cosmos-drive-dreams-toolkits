@@ -1,9 +1,13 @@
 # Cosmos-AV-Sample Toolkits
 This repo provides toolkits for:
 
-* A rendering script that converts open-source datasets (e.g., Waymo Open Dataset) into input videos (LiDAR and HDMAP) compatible with [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1/blob/main/examples/inference_cosmos_transfer1_7b_sample_av.md).
+* A rendering script that converts RDS-HQ datasets into input videos (LiDAR and HDMAP) compatible with [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1/blob/main/examples/inference_cosmos_transfer1_7b_sample_av.md).
 
-* 10 examples (collected by NVIDIA) of input prompts in raw format to help understand how to interface with the model. We provide scripts to render the raw data into [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1/blob/main/examples/inference_cosmos_transfer1_7b_sample_av.md) input videos (LiDAR and HDMAP).
+* A conversion script that converts open-source datasets (e.g., Waymo Open Dataset) into RDS-HQ format, so you can reuse the rendering script to render the input videos.
+
+* An interactive visualization tool to visualize the RDS-HQ dataset and generate novel ego trajectories.
+
+* 10 examples (collected by NVIDIA) of input prompts in raw format to help understand how to interface with the model. 
 
 **[[Paper]](https://arxiv.org/abs/2503.14492)**
 **[[Model Code]](https://github.com/nvidia-cosmos/cosmos-transfer1)**
@@ -34,25 +38,61 @@ git lfs install
 git clone git@hf.co:datasets/nvidia/Cosmos-Transfer1-7B-Sample-AV-Data-Example
 ```
 
-## Usage
+## Visualize Dataset
+You can use `visualize_rds_hq.py` to visualize the RDS-HQ dataset.
+```bash
+python visualize_rds_hq.py -i <RDS_HQ_FOLDER> -c <CLIP_ID>
+```
+This python script will launch a [viser](https://github.com/nerfstudio-project/viser) server to visualize the 3D HD map world with dynamic bounding boxes. You can use 
+- `w a s d` to control camera's position
+- `q e` to control camera's z-axis coordinate
+
+![viser](./assets/viser.png)
+
+> [!NOTE]
+> You can run this script in a server with VS Code + remote-ssh plugin. VS Code will automatically forward the port of viser to the local host. 
+
+
+## Rendering Cosmos Input Control Video
 You can use `render_from_rds_hq.py` to render the HD map + bounding box / LiDAR condition videos from RDS-HQ dataset. GPU is required for rendering LiDAR.
 ```bash
-# single process
 python render_from_rds_hq.py -i <RDS_HQ_FOLDER> -o <OUTPUT_FOLDER> [--skip hdmap] [--skip lidar]
 ```
-You can add `--skip hdmap` or `--skip lidar` to skip the rendering of HD map and LiDAR, respectively.
+This will automatically launch multiple jobs based on [Ray](https://docs.ray.io/en/releases-2.4.0/index.html). If you want to use single process (e.g. for debugging), you can set `USE_RAY=False` in `render_from_rds_hq.py`. You can add `--skip hdmap` or `--skip lidar` to skip the rendering of HD map and LiDAR, respectively. 
 
-You can also run this script in multiple processes to speed up the rendering process.
-```bash
-# multiple processes
-torchrun --nproc_per_node=32 render_from_rds_hq.py -i <RDS_HQ_FOLDER> -o <OUTPUT_FOLDER> [--skip hdmap] [--skip lidar]
-```
-Set `nproc_per_node` to the number of processes you want to use.
 **RDS-HQ Rendering Results**
-![RDS-HQ Rendering Results](./assets/rds_hq_render.png)
+<div align="center">
+  <img src="./assets/rds_hq_render.png" alt="RDS-HQ Rendering Results" width="800" />
+</div>
 
 > [!NOTE]
 > If you're interested, we offer [documentation](./assets/ftheta.pdf) that explains the NVIDIA f-theta camera in detail.
+
+
+The output folder structure will be like this:
+```bash
+<OUTPUT_FOLDER>
+├── camera_name_1
+│   └── hdmap
+│       ├── <CLIP_ID>_0.mp4
+│       ├── <CLIP_ID>_1.mp4
+│       └── ...
+│
+│   └── lidar
+│       ├── <CLIP_ID>_0.mp4
+│       ├── <CLIP_ID>_1.mp4
+│       └── ...
+│
+│   └── rgb
+│       ├── <CLIP_ID>_0.mp4
+│       ├── <CLIP_ID>_1.mp4
+│       └── ...
+│ 
+├── camera_name_2
+│    └── ...
+│
+└── ...
+```
 
 ## Convert Public Datasets
 
@@ -67,7 +107,7 @@ pip install waymo-open-dataset-tf-2-11-0==1.6.1
 #### Step 0: Check Our Provided Captions
 We provide auto-generated captions for the Waymo dataset at [`assets/waymo_caption.csv`](./assets/waymo_caption.csv). You will need these captions to run [**Cosmos-Transfer1-7B-Sample-AV**](https://github.com/nvidia-cosmos/cosmos-transfer1/blob/main/examples/inference_cosmos_transfer1_7b_sample_av.md).
 
-#### Step 1: Download Waymo Open Dataset (Skip if Downloaded)
+#### Step 1: Download Waymo Open Dataset
 
 Download the all the training & validation clips from [waymo perception dataset v1.4.2](https://waymo.com/open/download/) to the `<WAYMO_TFRECORDS_FOLDER>`. 
 
@@ -107,9 +147,9 @@ After downloading tfrecord files, we expect a folder structure as follows:
 #### Step 2: Convert Waymo Open Dataset to RDS-HQ format
 First, convert the Waymo Open Dataset to RDS-HQ format. Suppose you have a folder with Waymo Open Dataset's tfrecords, you can convert it to RDS-HQ format by:
 ```bash
-python convert_waymo_to_rds_hq.py -i <WAYMO_TFRECORDS_FOLDER> -o waymo_demo -n 32
+python convert_waymo_to_rds_hq.py -i <WAYMO_TFRECORDS_FOLDER> -o waymo_demo
 ```
-Here we specify the output folder as `waymo_demo`; you can change it to any other one. You can also increase the number of workers (`-n`) to your CPU cores to speed up the conversion.
+Here we specify the output folder as `waymo_demo`; you can change it to any other one. 
 
 #### Step 3: Render HD map + bounding box / LiDAR condition video from RDS-HQ format
 Since we have converted Waymo Open Dataset's map labels and LiDAR points into the RDS-HQ format, we can render the HD map + bounding box / LiDAR conditioned video using the same script. The cameras in Waymo's Open dataset are pinhole camera models. To align with our model's training domain, we suggest using the same f-theta camera intrinsics to do the projection. We provide a default f-theta camera intrinsics in `config/default_ftheta_intrinsic.tar`, and you can render with f-theta camera by:
@@ -122,12 +162,6 @@ here `-d` is the dataset name, you can find its configuration in `config/dataset
 ```bash
 python render_from_rds_hq.py -d waymo -i waymo_demo -o waymo_demo_render_pinhole -c pinhole
 ```
-
-You can also run this script in multiple processes to speed up the rendering process.
-```bash
-torchrun --nproc_per_node=32 render_from_rds_hq.py -d waymo -i waymo_demo -o waymo_demo_render_ftheta
-```
-Set `nproc_per_node` to the number of processes you want to use.
 
 **Waymo Rendering Results (use ftheta intrinsics in RDS-HQ)**
 ![Waymo Rendering Results](./assets/waymo_render_ftheta.png)
@@ -144,6 +178,18 @@ Set `nproc_per_node` to the number of processes you want to use.
   <img src="assets/waymo_example.gif" alt=""  width="1100" />
 </div>
 
+
+## Generate Novel Ego Trajectory
+You can also use `visualize_rds_hq.py` to generate novel trajectories.
+```bash
+python visualize_rds_hq.py -i <RDS_HQ_FOLDER> [-np <NOVEL_POSE_FOLDER_NAME>]
+```
+Here `<NOVEL_POSE_FOLDER_NAME>` is the folder name for novel pose data. By default, it will be `novel_pose`. 
+
+Using the panel on the right, you record keyframe poses (make sure include the first frame and the last frame), and the script will interpolate all intermediate poses and save them as a `.tar` file in the `novel_pose` folder at `<RDS_HQ_FOLDER>`. Then you can pass `--novel_pose_folder <NOVEL_POSE_FOLDER_NAME>` to the rendering script `render_from_rds_hq.py` to use the novel ego trajectory.
+```bash
+python render_from_rds_hq.py -i <RDS_HQ_FOLDER> -o <OUTPUT_FOLDER> -np <NOVEL_POSE_FOLDER_NAME>
+```
 
 
 ## Prompting During Inference
