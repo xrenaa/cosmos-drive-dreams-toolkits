@@ -140,7 +140,6 @@ def prepare_output(
         render_name, 
         settings, 
         output_root, 
-        output_folder, 
         clip_id, 
         camera_name, 
         target_resolution, 
@@ -156,7 +155,6 @@ def prepare_output(
         render_name: the name of the rendered video. str. 'hdmap', 'lidar', or 'rgb'
         settings: the settings of the dataset
         output_root: the root folder of the output data
-        output_folder: the folder name of the output data
         clip_id: the id of the clip
         camera_name: the name of the camera
     """
@@ -182,7 +180,7 @@ def prepare_output(
         full_video = full_video[:, crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
 
     output_root_p = Path(output_root)
-    (output_root_p / camera_name / output_folder / clip_id).mkdir(parents=True, exist_ok=True)
+    (output_root_p / camera_name / render_name).mkdir(parents=True, exist_ok=True)
     for cur_idx, i in enumerate(range(3, len(render_frame_ids), CUT_LEN - OVERLAP)):
         if i + CUT_LEN > len(render_frame_ids):
             continue
@@ -190,8 +188,8 @@ def prepare_output(
         full_video_cut = full_video[i:i+CUT_LEN]
 
         # save HD map condition video
-        map_writer = imageio_v1.get_writer(
-            output_root_p / camera_name / output_folder / clip_id / f"{cur_idx}_{render_name}_cond.mp4",
+        output_writer = imageio_v1.get_writer(
+            output_root_p / camera_name / render_name / f"{clip_id}_{cur_idx}.mp4",
             fps=TARGET_RENDER_FPS,
             codec="libx264",
             macro_block_size=None,  # This makes sure num_frames is correct (by default it is rounded to 16x).
@@ -202,8 +200,8 @@ def prepare_output(
             ],
         )
         for local_frame_idx in range(len(full_video_cut)):
-            map_writer.append_data(full_video_cut[local_frame_idx])
-        map_writer.close()
+            output_writer.append_data(full_video_cut[local_frame_idx])
+        output_writer.close()
 
 
 @ray_remote(use_ray=USE_RAY, num_gpus=0)
@@ -213,7 +211,6 @@ def render_sample_hdmap(
     clip_id: str,
     settings: dict,
     camera_type: str,
-    output_folder: str,
     post_training: bool = False,
     novel_pose_folder: str = None,
     target_resolution: tuple[int, int] = (1280, 720),
@@ -256,7 +253,6 @@ def render_sample_hdmap(
             'hdmap', 
             settings,
             output_root, 
-            output_folder, 
             clip_id, 
             camera_name, 
             target_resolution, 
@@ -272,7 +268,6 @@ def render_sample_lidar(
     clip_id: str,
     settings: dict,
     camera_type: str,
-    output_folder: str,
     post_training: bool = False,
     novel_pose_folder: str = None,
     target_resolution: tuple[int, int] = (1280, 720),
@@ -360,7 +355,6 @@ def render_sample_lidar(
             'lidar',
             settings,
             output_root,
-            output_folder,
             clip_id,
             camera_name,
             target_resolution,
@@ -376,7 +370,6 @@ def render_sample_rgb(
     clip_id: str,
     settings: dict,
     camera_type: str,
-    output_folder: str,
     post_training: bool = False,
     novel_pose_folder: str = None,
     target_resolution: tuple[int, int] = (1280, 720),
@@ -413,7 +406,6 @@ def render_sample_rgb(
             'rgb',
             settings,
             output_root,
-            output_folder,
             clip_id,
             camera_name,
             target_resolution,
@@ -427,11 +419,10 @@ def render_sample_rgb(
 @click.option("--dataset", "-d", type=str, default="rds_hq", help="the dataset name, 'rds_hq' or 'waymo' or 'waymo_mv', see the config in settings.json")
 @click.option("--camera_type", "-c", type=str, default="ftheta", help="the type of camera model, 'pinhole' or 'ftheta'")
 @click.option("--skip", "-s", multiple=True, help="can be 'hdmap' or 'lidar'")
-@click.option("--output_folder", "-f", type=str, default="render", help="Output folder")
 @click.option("--post_training", "-p", type=bool, default=False, help="if True, output the RGB video for post-training")
 @click.option("--num", "-n", type=int, default=-1, help="num clips to process")
 @click.option("--novel_pose_folder", "-np", type=str, default=None, help="the folder name of the novel pose data. If provided, we will render the novel ego trajectory")
-def main(input_root, output_root, dataset, camera_type, skip, output_folder, post_training, num, novel_pose_folder):
+def main(input_root, output_root, dataset, camera_type, skip, post_training, num, novel_pose_folder):
     if skip is not None:
         assert all(s in ['hdmap', 'lidar'] for s in skip), "skip must be in ['hdmap', 'lidar']"
 
@@ -463,20 +454,20 @@ def main(input_root, output_root, dataset, camera_type, skip, output_folder, pos
         ray.init()
         futures = []
         if 'hdmap' not in skip:
-            futures.extend([render_sample_hdmap.remote(input_root, output_root, clip_id, settings, camera_type, output_folder, post_training, novel_pose_folder) for clip_id in clip_list])
+            futures.extend([render_sample_hdmap.remote(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder) for clip_id in clip_list])
         if 'lidar' not in skip:
-            futures.extend([render_sample_lidar.remote(input_root, output_root, clip_id, settings, camera_type, output_folder, post_training, novel_pose_folder) for clip_id in clip_list])
+            futures.extend([render_sample_lidar.remote(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder) for clip_id in clip_list])
         if post_training:
-            futures.extend([render_sample_rgb.remote(input_root, output_root, clip_id, settings, camera_type, output_folder, post_training, novel_pose_folder) for clip_id in clip_list])
+            futures.extend([render_sample_rgb.remote(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder) for clip_id in clip_list])
         wait_for_futures(futures)
     else:
         for clip_id in tqdm(clip_list):
             if 'hdmap' not in skip:
-                render_sample_hdmap(input_root, output_root, clip_id, settings, camera_type, output_folder, post_training, novel_pose_folder)
+                render_sample_hdmap(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder)
             if 'lidar' not in skip:
-                render_sample_lidar(input_root, output_root, clip_id, settings, camera_type, output_folder, post_training, novel_pose_folder)
+                render_sample_lidar(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder)
             if post_training:
-                render_sample_rgb(input_root, output_root, clip_id, settings, camera_type, output_folder, post_training, novel_pose_folder)
+                render_sample_rgb(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder)
 
 if __name__ == "__main__":
     main()
