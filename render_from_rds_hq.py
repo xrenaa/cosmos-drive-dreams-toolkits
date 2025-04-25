@@ -415,7 +415,7 @@ def render_sample_rgb(
             
 @click.command()
 @click.option("--input_root", '-i', type=str, help="the root folder of the input data")
-@click.option("--output_root", '-o', type=str, help="the root folder of the output data")
+@click.option("--output_root", '-o', type=str, required=True, help="the root folder of the output data")
 @click.option("--dataset", "-d", type=str, default="rds_hq", help="the dataset name, 'rds_hq' or 'waymo' or 'waymo_mv', see the config in settings.json")
 @click.option("--camera_type", "-c", type=str, default="ftheta", help="the type of camera model, 'pinhole' or 'ftheta'")
 @click.option("--skip", "-s", multiple=True, help="can be 'hdmap' or 'lidar'")

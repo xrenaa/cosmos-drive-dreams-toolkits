@@ -12,6 +12,7 @@ import cv2
 from utils.pcd_utils import interpolate_polyline_to_points
 from typing import List, Union
 from abc import abstractmethod
+from shapely.geometry import Polygon, LineString
 
 DEPTH_MAX = 122.5
 
@@ -158,7 +159,7 @@ class CameraBase:
 
 
     @staticmethod
-    def _clip_polyline_to_image_plane(points_in_cam: np.ndarray) -> np.ndarray:
+    def _clip_polyline_to_image_plane(points_in_cam: np.ndarray, eps: float = 5e-2) -> np.ndarray:
         """
         Args:
             points_in_cam: np.ndarray
@@ -169,7 +170,7 @@ class CameraBase:
         """        
         depth = points_in_cam[:, 2]
         # go through all the edges of the polyline. 
-        eps = 1e-1
+
         cam_coords_cliped = []
         for i in range(len(points_in_cam) - 1):
             pt1 = points_in_cam[i]
@@ -485,22 +486,36 @@ class CameraBase:
                 uv_coords = self.ray2pixel_np(points_in_cam_clipped).astype(np.int32)
                 depth_mean = points_in_cam_clipped[:, 2].mean()
 
-                # cv2.clipLine to limit the points to the image boundary
-                uv_coords_line_clipped = []
-                for i in range(len(uv_coords) - 1):
-                    pixel1 = uv_coords[i]
-                    pixel2 = uv_coords[i+1]
-                    clipped, pixel1, pixel2 = cv2.clipLine((0, 0, W, H), pixel1, pixel2)
-                    uv_coords_line_clipped.append(pixel1)
-                    uv_coords_line_clipped.append(pixel2)
+                # create convex hull for uv_coords, update the uv_coords
+                uv_coords = cv2.convexHull(uv_coords).reshape(-1, 2)
+                
+                # maybe degrade to a line
+                if uv_coords.shape[0] < 3:
+                    continue
 
-                hull_in_uv = np.array(uv_coords_line_clipped).astype(np.int32)
+                polygon = Polygon(uv_coords)
 
-                # create convex hull and draw on the image
-                convex_hull_in_uv = cv2.convexHull(hull_in_uv.astype(np.int32)) # shape (N, 1, 2)
+                if not polygon.is_valid:
+                    polygon = polygon.buffer(0)
+
+                boundary = Polygon([
+                    (0, 0),
+                    (W, 0),
+                    (W, H),
+                    (0, H),
+                ])
+                clipped_polygon = polygon.intersection(boundary)
+
+                if clipped_polygon.is_empty or clipped_polygon.geom_type != 'Polygon':
+                    continue
+
+                clipped_points = list(clipped_polygon.exterior.coords)
+
                 fill_weight = (2 * (DEPTH_MAX - depth_mean)) / 255
                 fill_value = (fill_weight * colors).astype(np.uint8).tolist()
-                cv2.fillPoly(canvas, [convex_hull_in_uv], fill_value)
+
+                clipped_points = np.array(clipped_points, dtype=np.int32)
+                cv2.fillPoly(canvas, [clipped_points], fill_value)
 
             draw_images.append(canvas)
 
