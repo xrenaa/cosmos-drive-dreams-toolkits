@@ -436,7 +436,7 @@ def main(input_root, output_root, dataset, camera_type, skip, post_training, num
 
     # if novel_pose_folder is provided, we also change the output folder
     if novel_pose_folder is not None:
-        output_folder = f'{output_folder}_{novel_pose_folder}'
+        output_root = f'{output_root}_{novel_pose_folder}'
 
     # get all clip ids
     input_root_p = Path(input_root)
