@@ -17,12 +17,20 @@ import pickle
 from copy import deepcopy
 import pandas as pd
 
-tokenizer = T5TokenizerFast.from_pretrained("google-t5/t5-11b")
-encoder = T5EncoderModel.from_pretrained("google-t5/t5-11b")
+tokenizer = T5TokenizerFast.from_pretrained("google-t5/t5-11b", cache_dir="/mnt/scratch/cache/imageinaire/")
+encoder = T5EncoderModel.from_pretrained("google-t5/t5-11b", cache_dir="/mnt/scratch/cache/imageinaire/")
 
 encoder.to("cuda")
 encoder.eval()
 encoder.requires_grad_(False)
+
+PREFIX_PROMPTS = {
+    "pinhole_front": "The video is captured from a camera mounted on a car. The camera is facing forward.",
+    "pinhole_front_left": "The video is captured from a camera mounted on a car. The camera is facing forward and slightly to the left.",
+    "pinhole_front_right": "The video is captured from a camera mounted on a car. The camera is facing forward and slightly to the right.",
+    "pinhole_side_left": "The video is captured from a camera mounted on a car. The camera is facing to the left.",
+    "pinhole_side_right": "The video is captured from a camera mounted on a car. The camera is facing to the right.",
+}
 
 @attrs.define
 class EncodedSample:
@@ -108,11 +116,32 @@ def _encode_for_batch(
     default='',
     help="Optional. Path to the exported videos. Only encode prompts for videos that are present",
 )
-def main(caption_file, save_embd_folder, videos_folder):
+@click.option(
+    "--save_prefix_emb_folder",
+    type=str,
+    default='',
+    help="Optional. Path to the folder where the prefix embeddings for multiview training will be saved.",
+)
+def main(caption_file, save_embd_folder, videos_folder, save_prefix_emb_folder):
     """
     Main function to create T5 embeddings from caption files.
     """
     os.makedirs(save_embd_folder, exist_ok=True)
+    if save_prefix_emb_folder:
+        os.makedirs(save_prefix_emb_folder, exist_ok=True)
+        for view_name, prefix_prompt in PREFIX_PROMPTS.items():
+            t5_xxl_filename = os.path.join(save_prefix_emb_folder, f"prefix_t5_embeddings_{view_name}.pickle")
+            os.makedirs(os.path.dirname(t5_xxl_filename), exist_ok=True)
+            if os.path.exists(t5_xxl_filename):
+                # Skip if the file already exists
+                continue
+
+            # Compute T5 embeddings
+            encoded_text = _encode_for_batch([prefix_prompt])
+
+            # Save T5 embeddings as pickle file
+            with open(t5_xxl_filename, "wb") as fp:
+                pickle.dump(encoded_text[0].encoded_text, fp)
 
     # Load the caption files and create embeddings
     df = pd.read_csv(caption_file, header=None)
@@ -122,7 +151,10 @@ def main(caption_file, save_embd_folder, videos_folder):
         video_paths = [os.path.join(videos_folder, f) for f in os.listdir(videos_folder) if f.endswith(".mp4")]
         video_id_to_name = {}
         for vpath in video_paths:
-            video_id_to_name[os.path.basename(vpath).split(".")[0][:-2]] = vpath
+            vname = os.path.basename(vpath).split(".")[0]
+            if vname.endswith("_0"):
+                vname = vname[:-2]
+            video_id_to_name[vname] = vpath
     prompts = []
     all_keys = []
     caption = {}
