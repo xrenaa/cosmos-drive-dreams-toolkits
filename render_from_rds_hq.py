@@ -183,7 +183,7 @@ def prepare_output(
 
     output_root_p = Path(output_root)
     camera_folder_name = f"{camera_type}_{camera_name}"
-    (output_root_p / camera_folder_name / render_name).mkdir(parents=True, exist_ok=True)
+    (output_root_p / render_name / camera_folder_name).mkdir(parents=True, exist_ok=True)
     for cur_idx, i in enumerate(range(3, len(render_frame_ids), CUT_LEN - OVERLAP)):
         if i + CUT_LEN > len(render_frame_ids):
             continue
@@ -192,7 +192,7 @@ def prepare_output(
 
         # save HD map condition video
         output_writer = imageio_v1.get_writer(
-            output_root_p / camera_folder_name / render_name / f"{clip_id}_{cur_idx}.mp4",
+            output_root_p / render_name / camera_folder_name / f"{clip_id}_{cur_idx}.mp4",
             fps=TARGET_RENDER_FPS,
             codec="libx264",
             macro_block_size=None,  # This makes sure num_frames is correct (by default it is rounded to 16x).

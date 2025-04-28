@@ -68,17 +68,18 @@ def save_prefix_embeddings(cache_dir: Path):
             pickle.dump(embedding, f)
         print(f"Saved prefix embedding for {view} to {save_path}")
 
-def _get_video_path(view_dir: Path, key: str) -> Path:
+def _get_video_path(data_root: Path, view: str, key: str) -> Path:
     """Get video path by matching key with video filename, ignoring clip id suffix
     
     Args:
-        view_dir (Path): Directory containing videos
+        data_root (Path): Root directory of the dataset
+        view (str): Camera view name
         key (str): Key from CSV file
         
     Returns:
         Path: Path to matching video file, or None if not found
     """
-    videos_dir = view_dir / "videos"
+    videos_dir = data_root / "videos" / view
     if not videos_dir.exists():
         return None
         
@@ -110,8 +111,8 @@ def _get_clip_id(video_path: Path) -> str:
     return "_" + video_path.stem.split("_")[-1]
 
 @click.command()
-@click.option("--text_file", type=str, required=True, help="Path to JSON file containing text descriptions")
-@click.option("--data_root", type=str, required=True, help="Path to data root directory")
+@click.option("--text_file", type=str, default="assets/waymo_multiview_texts.json", help="Path to JSON file containing text descriptions")
+@click.option("--data_root", type=str, default="waymo_mv", help="Path to data root directory")
 def main(text_file: str, data_root: str):
     """Main function: Process text and generate T5 embeddings"""
     data_root = Path(data_root)
@@ -126,11 +127,9 @@ def main(text_file: str, data_root: str):
     
     # Process text and generate embeddings for each view
     for view in CAMERA_VIEWS:
-        view_dir = data_root / view
-        metas_dir = view_dir / "metas"
-        t5_dir = view_dir / "t5_xxl"
-        
         # Create necessary directories
+        metas_dir = data_root / "metas" / view
+        t5_dir = data_root / "t5_xxl" / view
         metas_dir.mkdir(parents=True, exist_ok=True)
         t5_dir.mkdir(parents=True, exist_ok=True)
         
@@ -144,7 +143,7 @@ def main(text_file: str, data_root: str):
             base_key = key[:-len(f"_{view}")]
             
             # Get video path by matching key
-            video_path = _get_video_path(view_dir, base_key)
+            video_path = _get_video_path(data_root, view, base_key)
             if video_path is None:
                 continue
                 
