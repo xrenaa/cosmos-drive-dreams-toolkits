@@ -144,7 +144,8 @@ def prepare_output(
         camera_name, 
         target_resolution, 
         crop_resolution, 
-        post_training
+        post_training,
+        camera_type
     ):
     """
     Cut full video into small clips for cosmos training / inference and save them.
@@ -157,6 +158,7 @@ def prepare_output(
         output_root: the root folder of the output data
         clip_id: the id of the clip
         camera_name: the name of the camera
+        camera_type: the type of camera model, 'pinhole' or 'ftheta'
     """
     if post_training: 
         TARGET_RENDER_FPS = settings['POST_TRAINING']['TARGET_RENDER_FPS']
@@ -180,7 +182,8 @@ def prepare_output(
         full_video = full_video[:, crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
 
     output_root_p = Path(output_root)
-    (output_root_p / camera_name / render_name).mkdir(parents=True, exist_ok=True)
+    camera_folder_name = f"{camera_type}_{camera_name}"
+    (output_root_p / camera_folder_name / render_name).mkdir(parents=True, exist_ok=True)
     for cur_idx, i in enumerate(range(3, len(render_frame_ids), CUT_LEN - OVERLAP)):
         if i + CUT_LEN > len(render_frame_ids):
             continue
@@ -189,7 +192,7 @@ def prepare_output(
 
         # save HD map condition video
         output_writer = imageio_v1.get_writer(
-            output_root_p / camera_name / render_name / f"{clip_id}_{cur_idx}.mp4",
+            output_root_p / camera_folder_name / render_name / f"{clip_id}_{cur_idx}.mp4",
             fps=TARGET_RENDER_FPS,
             codec="libx264",
             macro_block_size=None,  # This makes sure num_frames is correct (by default it is rounded to 16x).
@@ -257,7 +260,8 @@ def render_sample_hdmap(
             camera_name, 
             target_resolution, 
             crop_resolution, 
-            post_training
+            post_training,
+            camera_type
         )
 
 
@@ -359,7 +363,8 @@ def render_sample_lidar(
             camera_name,
             target_resolution,
             crop_resolution,
-            post_training
+            post_training,
+            camera_type
         )
 
 
@@ -403,14 +408,15 @@ def render_sample_rgb(
         prepare_output(
             all_frames_resized,
             render_frame_ids,
-            'rgb',
+            'videos',
             settings,
             output_root,
             clip_id,
             camera_name,
             target_resolution,
             crop_resolution,
-            post_training
+            post_training,
+            camera_type
         )
             
 @click.command()
