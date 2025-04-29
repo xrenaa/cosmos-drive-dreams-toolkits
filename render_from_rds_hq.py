@@ -414,7 +414,7 @@ def render_sample_rgb(
         prepare_output(
             all_frames_resized,
             render_frame_ids,
-            'rgb',
+            'videos',
             settings,
             output_root,
             clip_id,
