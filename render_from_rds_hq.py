@@ -55,10 +55,10 @@ def prepare_input(input_root, clip_id, settings, camera_type, post_training, tar
         novel_pose_folder: the folder name of the novel pose data. If provided, we will render the novel ego trajectory.
 
     Returns:
-        pose_all_frames: the pose of the camera. numpy array of shape (T, 4, 4)
+        camera_name_to_camera_poses: the pose of the camera. dict of numpy array of shape (T, 4, 4)
         render_frame_ids: the valid frame ids used for rendering. list of int
         all_object_info: the object info. list of dict
-        camera_models: the camera models. dict of camera model objects
+        camera_name_to_camera_model: the camera models. dict of camera model objects
     """
     INPUT_POSE_FPS = settings['INPUT_POSE_FPS']
 
@@ -67,7 +67,8 @@ def prepare_input(input_root, clip_id, settings, camera_type, post_training, tar
     else:
         TARGET_RENDER_FPS = settings['NOT_POST_TRAINING']['TARGET_RENDER_FPS']
 
-    camera_models = {}
+    camera_name_to_camera_model = {}
+    camera_name_to_camera_poses = {}
 
     target_w, target_h = target_resolution
     # generate map projection for the instance buffer
@@ -130,9 +131,10 @@ def prepare_input(input_root, clip_id, settings, camera_type, post_training, tar
         else:
             raise ValueError(f"Invalid camera type: {camera_type}")
 
-        camera_models[camera_name] = camera_model
+        camera_name_to_camera_model[camera_name] = camera_model
+        camera_name_to_camera_poses[camera_name] = pose_all_frames
 
-    return pose_all_frames, render_frame_ids, all_object_info, camera_models
+    return camera_name_to_camera_poses, render_frame_ids, all_object_info, camera_name_to_camera_model
 
 def prepare_output(
         full_video, 
@@ -221,13 +223,15 @@ def render_sample_hdmap(
 ):
     minimap_types = settings['MINIMAP_TYPES']
 
-    pose_all_frames, render_frame_ids, all_object_info, camera_models = \
+    camera_name_to_camera_poses, render_frame_ids, all_object_info, camera_name_to_camera_model = \
         prepare_input(input_root, clip_id, settings, camera_type, post_training, target_resolution, novel_pose_folder)
     minimap_wds_files = [
         os.path.join(input_root, f"3d_{minimap_type}", f"{clip_id}.tar") for minimap_type in minimap_types
     ]
 
-    for camera_name, camera_model in camera_models.items():
+    for camera_name, camera_model in camera_name_to_camera_model.items():
+        pose_all_frames = camera_name_to_camera_poses[camera_name]
+
         minimaps_projection_merged = np.zeros((len(render_frame_ids), camera_model.height, camera_model.width, 3), dtype=np.uint8)
         for minimap_wds_file in minimap_wds_files:
             minimap_data_wo_meta_info, minimap_name = simplify_minimap(minimap_wds_file)
@@ -282,12 +286,13 @@ def render_sample_lidar(
     INPUT_LIDAR_FPS = settings['INPUT_LIDAR_FPS']
 
     target_w, target_h = target_resolution
-    pose_all_frames, render_frame_ids, all_object_info, camera_models = \
+    camera_name_to_camera_poses, render_frame_ids, all_object_info, camera_name_to_camera_model = \
         prepare_input(input_root, clip_id, settings, camera_type, post_training, target_resolution, novel_pose_folder)
 
     frame_num = len(render_frame_ids)
 
-    for camera_name, camera_model in camera_models.items():
+    for camera_name, camera_model in camera_name_to_camera_model.items():
+        pose_all_frames = camera_name_to_camera_poses[camera_name]
         # load lidar data
         lidar_tar = os.path.join(input_root, 'lidar_raw', f"{clip_id}.tar")
         lidar_data = get_sample(lidar_tar) # 'xxxxxx.xyz' & 'xxxxxx.lidar_to_world'
@@ -384,10 +389,11 @@ def render_sample_rgb(
     This function is used to render / sample the RGB video for post-training use.
     """
     target_w, target_h = target_resolution
-    pose_all_frames, render_frame_ids, all_object_info, camera_models = \
+    camera_name_to_camera_poses, render_frame_ids, all_object_info, camera_name_to_camera_model = \
         prepare_input(input_root, clip_id, settings, camera_type, post_training, target_resolution, novel_pose_folder)
 
-    for camera_name, camera_model in camera_models.items():
+    for camera_name, camera_model in camera_name_to_camera_model.items():
+        pose_all_frames = camera_name_to_camera_poses[camera_name]
         # load rgb
         rgb_file = os.path.join(input_root, f'{camera_type}_{camera_name}', f"{clip_id}.mp4")
         # load all frames
