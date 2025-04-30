@@ -18,7 +18,7 @@ import ray
 
 from tqdm import tqdm
 from pathlib import Path
-from termcolor import cprint
+from termcolor import cprint, colored
 from pathlib import Path
 from utils.wds_utils import get_sample
 from utils.bbox_utils import create_bbox_projection, interpolate_bbox, fix_static_objects
@@ -42,7 +42,7 @@ def get_low_fps_indices(high_indices, step=3):
     return low_indices_times_step, low_indices
 
 
-def prepare_input(input_root, clip_id, settings, camera_type, post_training, target_resolution, novel_pose_folder):
+def prepare_input(input_root, clip_id, settings, camera_type, post_training, resize_resolution, novel_pose_folder):
     """
     Prepare input for rendering.
     Args:
@@ -51,7 +51,7 @@ def prepare_input(input_root, clip_id, settings, camera_type, post_training, tar
         settings: the settings of the dataset
         camera_type: the type of camera model, 'pinhole' or 'ftheta'
         post_training: if True, use the post-training settings
-        target_resolution: the resolution of the output video. It helps us to set the correct camera model.
+        resize_resolution: the resolution of the output video. It helps us to set the correct camera model.
         novel_pose_folder: the folder name of the novel pose data. If provided, we will render the novel ego trajectory.
 
     Returns:
@@ -70,7 +70,7 @@ def prepare_input(input_root, clip_id, settings, camera_type, post_training, tar
     camera_name_to_camera_model = {}
     camera_name_to_camera_poses = {}
 
-    target_w, target_h = target_resolution
+    resize_w, resize_h = resize_resolution
     # generate map projection for the instance buffer
     for camera_name in settings['CAMERAS']:
         print(f"Processing {clip_id} {camera_name}...")
@@ -83,6 +83,7 @@ def prepare_input(input_root, clip_id, settings, camera_type, post_training, tar
         pose_all_frames = np.stack([pose_data_this_cam[k] for k in sorted(pose_data_this_cam.keys())])
 
         frame_num = pose_all_frames.shape[0]
+        frame_num = 3 + 121
         render_frame_ids = list(range(0, frame_num, INPUT_POSE_FPS // TARGET_RENDER_FPS))
 
         # interpolate bbox from 10Hz to 30Hz
@@ -102,8 +103,8 @@ def prepare_input(input_root, clip_id, settings, camera_type, post_training, tar
             intrinsic_this_cam = intrinsic_data[f"{camera_type}_intrinsic.{camera_name}.npy"]
             camera_model = PinholeCamera.from_numpy(intrinsic_this_cam, device='cpu')
 
-            rescale_h = target_h / camera_model.height
-            rescale_w = target_w / camera_model.width
+            rescale_h = resize_h / camera_model.height
+            rescale_w = resize_w / camera_model.width
             camera_model.rescale(rescale_h, rescale_w)
 
         elif camera_type == "ftheta":
@@ -123,8 +124,8 @@ def prepare_input(input_root, clip_id, settings, camera_type, post_training, tar
                 intrinsic_this_cam = intrinsic_data[f"{camera_type}_intrinsic.{camera_name_in_rds_hq}.npy"]
 
             camera_model = FThetaCamera.from_numpy(intrinsic_this_cam, device='cpu')
-            rescale_h = target_h / camera_model.height
-            rescale_w = target_w / camera_model.width
+            rescale_h = resize_h / camera_model.height
+            rescale_w = resize_w / camera_model.width
 
             assert abs(rescale_h - rescale_w) < 0.01 # only handle the case that height is downsampled by the same ratio, required by the ftheta camera model
             camera_model.rescale(rescale_h)
@@ -144,10 +145,11 @@ def prepare_output(
         output_root, 
         clip_id, 
         camera_name, 
-        target_resolution, 
-        crop_resolution, 
+        resize_resolution, 
+        cosmos_resolution, 
         post_training,
-        camera_type
+        camera_type,
+        resize_last
     ):
     """
     Cut full video into small clips for cosmos training / inference and save them.
@@ -172,16 +174,20 @@ def prepare_output(
         OVERLAP = settings['NOT_POST_TRAINING']['OVERLAP']
 
     # sometimes the full_video does not match the target resolution, e.g. 720 * 1277, we need to resize it
-    if full_video.shape[1] != target_resolution[1] or full_video.shape[2] != target_resolution[0]:
-        print(f"Resizing {clip_id} {render_name} video from {full_video.shape[1]}x{full_video.shape[2]} to {target_resolution[1]}x{target_resolution[0]}...")
-        full_video = np.stack([cv2.resize(frame, target_resolution, interpolation=cv2.INTER_LANCZOS4) for frame in full_video], axis=0)
+    if full_video.shape[1] != resize_resolution[1] or full_video.shape[2] != resize_resolution[0]:
+        print(f"Resizing {clip_id} {render_name} video from {full_video.shape[1]}x{full_video.shape[2]} to {resize_resolution[1]}x{resize_resolution[0]}...")
+        full_video = np.stack([cv2.resize(frame, resize_resolution, interpolation=cv2.INTER_LANCZOS4) for frame in full_video], axis=0)
 
-    if crop_resolution != target_resolution:
-        crop_w, crop_h = crop_resolution
-        target_w, target_h = target_resolution
-        crop_x = (target_w - crop_w) // 2
-        crop_y = (target_h - crop_h) // 2
-        full_video = full_video[:, crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
+    if cosmos_resolution != resize_resolution:
+        if resize_last:
+            target_w, target_h = cosmos_resolution
+            full_video = np.stack([cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4) for frame in full_video], axis=0)
+        else:
+            crop_w, crop_h = cosmos_resolution
+            resize_w, resize_h = resize_resolution
+            crop_x = (resize_w - crop_w) // 2
+            crop_y = (resize_h - crop_h) // 2
+            full_video = full_video[:, crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
 
     output_root_p = Path(output_root)
     camera_folder_name = f"{camera_type}_{camera_name}"
@@ -218,13 +224,14 @@ def render_sample_hdmap(
     camera_type: str,
     post_training: bool = False,
     novel_pose_folder: str = None,
-    target_resolution: tuple[int, int] = (1280, 720),
-    crop_resolution: tuple[int, int] = (1280, 704),
+    resize_resolution: tuple[int, int] = (1280, 720),
+    cosmos_resolution: tuple[int, int] = (1280, 704),
+    resize_last: bool = False,
 ):
     minimap_types = settings['MINIMAP_TYPES']
 
     camera_name_to_camera_poses, render_frame_ids, all_object_info, camera_name_to_camera_model = \
-        prepare_input(input_root, clip_id, settings, camera_type, post_training, target_resolution, novel_pose_folder)
+        prepare_input(input_root, clip_id, settings, camera_type, post_training, resize_resolution, novel_pose_folder)
     minimap_wds_files = [
         os.path.join(input_root, f"3d_{minimap_type}", f"{clip_id}.tar") for minimap_type in minimap_types
     ]
@@ -262,10 +269,11 @@ def render_sample_hdmap(
             output_root, 
             clip_id, 
             camera_name, 
-            target_resolution, 
-            crop_resolution, 
+            resize_resolution, 
+            cosmos_resolution, 
             post_training,
-            camera_type
+            camera_type,
+            resize_last
         )
 
 
@@ -278,16 +286,17 @@ def render_sample_lidar(
     camera_type: str,
     post_training: bool = False,
     novel_pose_folder: str = None,
-    target_resolution: tuple[int, int] = (1280, 720),
-    crop_resolution: tuple[int, int] = (1280, 704),
+    resize_resolution: tuple[int, int] = (1280, 720),
+    cosmos_resolution: tuple[int, int] = (1280, 704),
+    resize_last: bool = False,
     accumulate_lidar_frames: int = 2,
 ):
     INPUT_POSE_FPS = settings['INPUT_POSE_FPS']
     INPUT_LIDAR_FPS = settings['INPUT_LIDAR_FPS']
 
-    target_w, target_h = target_resolution
+    resize_w, resize_h = resize_resolution
     camera_name_to_camera_poses, render_frame_ids, all_object_info, camera_name_to_camera_model = \
-        prepare_input(input_root, clip_id, settings, camera_type, post_training, target_resolution, novel_pose_folder)
+        prepare_input(input_root, clip_id, settings, camera_type, post_training, resize_resolution, novel_pose_folder)
 
     frame_num = len(render_frame_ids)
 
@@ -343,8 +352,8 @@ def render_sample_lidar(
                 intrinsics,
                 buffer_points=cat_points.cuda(),
                 buffer_length=lengths_tensor.cuda(),
-                target_h=target_h, 
-                target_w=target_w,
+                resize_h=resize_h, 
+                resize_w=resize_w,
                 center_only=False,
                 is_ftheta=(camera_type == 'ftheta'),
                 expanded_kernel=4
@@ -366,10 +375,11 @@ def render_sample_lidar(
             output_root,
             clip_id,
             camera_name,
-            target_resolution,
-            crop_resolution,
+            resize_resolution,
+            cosmos_resolution,
             post_training,
-            camera_type
+            camera_type,
+            resize_last
         )
 
 
@@ -382,15 +392,16 @@ def render_sample_rgb(
     camera_type: str,
     post_training: bool = False,
     novel_pose_folder: str = None,
-    target_resolution: tuple[int, int] = (1280, 720),
-    crop_resolution: tuple[int, int] = (1280, 704),
+    resize_resolution: tuple[int, int] = (1280, 720),
+    cosmos_resolution: tuple[int, int] = (1280, 704),
+    resize_last: bool = False,
 ):
     """
     This function is used to render / sample the RGB video for post-training use.
     """
-    target_w, target_h = target_resolution
+    resize_w, resize_h = resize_resolution
     camera_name_to_camera_poses, render_frame_ids, all_object_info, camera_name_to_camera_model = \
-        prepare_input(input_root, clip_id, settings, camera_type, post_training, target_resolution, novel_pose_folder)
+        prepare_input(input_root, clip_id, settings, camera_type, post_training, resize_resolution, novel_pose_folder)
 
     for camera_name, camera_model in camera_name_to_camera_model.items():
         pose_all_frames = camera_name_to_camera_poses[camera_name]
@@ -400,14 +411,14 @@ def render_sample_rgb(
         vr = decord.VideoReader(rgb_file)
         num_frames = len(vr)
         all_frames = [vr[i] for i in range(num_frames)]
-        # resize all frames to target_resolution
+        # resize all frames to resize_resolution
         all_frames_resized = []
         for frame_read in all_frames:
             try:
                 frame = frame_read.asnumpy()
             except AttributeError:
                 frame = frame_read.numpy()
-            frame_resized = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
+            frame_resized = cv2.resize(frame, (resize_w, resize_h), interpolation=cv2.INTER_LANCZOS4)
             all_frames_resized.append(frame_resized)
         all_frames_resized = np.stack(all_frames_resized, axis=0)
 
@@ -419,28 +430,45 @@ def render_sample_rgb(
             output_root,
             clip_id,
             camera_name,
-            target_resolution,
-            crop_resolution,
+            resize_resolution,
+            cosmos_resolution,
             post_training,
-            camera_type
+            camera_type,
+            resize_last
         )
             
 @click.command()
 @click.option("--input_root", '-i', type=str, help="the root folder of the input data")
 @click.option("--output_root", '-o', type=str, required=True, help="the root folder of the output data")
-@click.option("--dataset", "-d", type=str, default="rds_hq", help="the dataset name, 'rds_hq' or 'waymo' or 'waymo_mv', see the config in settings.json")
+@click.option("--dataset", "-d", type=str, default="rds_hq", help="the dataset name, 'rds_hq' or 'waymo' or 'waymo_mv', see xxx.json in config folder")
 @click.option("--camera_type", "-c", type=str, default="ftheta", help="the type of camera model, 'pinhole' or 'ftheta'")
 @click.option("--skip", "-s", multiple=True, help="can be 'hdmap' or 'lidar'")
 @click.option("--post_training", "-p", type=bool, default=False, help="if True, output the RGB video for post-training")
+@click.option("--resize_resolution", "-rr", type=str, default="1280,720", 
+    help="Resize resolution. Ftheta camera must be resized isotropically, so we first specify resizing resolution. For pinhole camera, we can directly set it to the cosmos_resolution.")
+@click.option("--cosmos_resolution", "-cr", type=str, default="1280,704", 
+    help="Cosmos accepts 1280x704 resolution video. For training, we crop it to 1280x704. When use cosmos results for original dataset augmentation, we suggest resizing it to 1280x704")
+@click.option("--resize_last", "-rl", type=bool, default=False, help="if True, resize again from resize_resolution to the cosmos_resolution")
 @click.option("--num", "-n", type=int, default=-1, help="num clips to process")
 @click.option("--novel_pose_folder", "-np", type=str, default=None, help="the folder name of the novel pose data. If provided, we will render the novel ego trajectory")
-def main(input_root, output_root, dataset, camera_type, skip, post_training, num, novel_pose_folder):
+def main(input_root, output_root, dataset, camera_type, skip, post_training, resize_resolution, cosmos_resolution, resize_last, num, novel_pose_folder):
     if skip is not None:
         assert all(s in ['hdmap', 'lidar'] for s in skip), "skip must be in ['hdmap', 'lidar']"
 
     if post_training: # for post-training only
         assert dataset in ['waymo', 'waymo_mv'], "post_training is only supported for waymo dataset"
         assert camera_type == 'pinhole', "post_training is only supported for pinhole camera"
+
+    if resize_last:
+        if resize_resolution != cosmos_resolution:
+            print(f"{colored('[Suggestion]', 'red', attrs=['bold'])} If resize_last is True, it would be better to set resize_resolution equal to cosmos_resolution: add -rr {colored(cosmos_resolution, 'cyan', attrs=['bold'])} , avoid resizing twice!")
+            print(f"Original Resolution -> 1. {colored('Resize', 'yellow', attrs=['bold'])} to {colored(resize_resolution, 'yellow', attrs=['bold'])}")
+            print(f"                    -> 2. {colored('Resize', 'yellow', attrs=['bold'])} to {colored(cosmos_resolution, 'yellow', attrs=['bold'])}.")
+        else:
+            print(f"Original Resolution -> 1. {colored('Resize', 'yellow', attrs=['bold'])} to {colored(cosmos_resolution, 'yellow', attrs=['bold'])}.")
+    else:
+        print(f"Original Resolution -> 1. {colored('Resize', 'yellow', attrs=['bold'])} to {colored(resize_resolution, 'yellow', attrs=['bold'])}")
+        print(f"                    -> 2. {colored('Center Crop', 'magenta', attrs=['bold'])} to {colored(cosmos_resolution, 'magenta', attrs=['bold'])}.")
 
     # Load settings
     with open(f'config/dataset_{dataset}.json', 'r') as file:
@@ -449,6 +477,10 @@ def main(input_root, output_root, dataset, camera_type, skip, post_training, num
     # if novel_pose_folder is provided, we also change the output folder
     if novel_pose_folder is not None:
         output_root = f'{output_root}_{novel_pose_folder}'
+
+    # extract resize_resolution and cosmos_resolution
+    resize_resolution = tuple(map(int, resize_resolution.split(',')))
+    cosmos_resolution = tuple(map(int, cosmos_resolution.split(',')))
 
     # get all clip ids
     input_root_p = Path(input_root)
@@ -466,20 +498,20 @@ def main(input_root, output_root, dataset, camera_type, skip, post_training, num
         ray.init()
         futures = []
         if 'hdmap' not in skip:
-            futures.extend([render_sample_hdmap.remote(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder) for clip_id in clip_list])
+            futures.extend([render_sample_hdmap.remote(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder, resize_resolution, cosmos_resolution, resize_last) for clip_id in clip_list])
         if 'lidar' not in skip:
-            futures.extend([render_sample_lidar.remote(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder) for clip_id in clip_list])
+            futures.extend([render_sample_lidar.remote(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder, resize_resolution, cosmos_resolution, resize_last) for clip_id in clip_list])
         if post_training:
-            futures.extend([render_sample_rgb.remote(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder) for clip_id in clip_list])
+            futures.extend([render_sample_rgb.remote(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder, resize_resolution, cosmos_resolution, resize_last) for clip_id in clip_list])
         wait_for_futures(futures)
     else:
         for clip_id in tqdm(clip_list):
             if 'hdmap' not in skip:
-                render_sample_hdmap(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder)
+                render_sample_hdmap(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder, resize_resolution, cosmos_resolution, resize_last)
             if 'lidar' not in skip:
-                render_sample_lidar(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder)
+                render_sample_lidar(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder, resize_resolution, cosmos_resolution, resize_last)
             if post_training:
-                render_sample_rgb(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder)
+                render_sample_rgb(input_root, output_root, clip_id, settings, camera_type, post_training, novel_pose_folder, resize_resolution, cosmos_resolution, resize_last)
 
 if __name__ == "__main__":
     main()
