@@ -235,6 +235,21 @@ def convert_waymo_pose(output_root: Path, clip_id: str, dataset: tf.data.TFRecor
     write_to_tar(sample, output_root / 'pose' / f'{clip_id}.tar')
 
 
+def convert_waymo_timestamp(output_root: Path, clip_id: str, dataset: tf.data.TFRecordDataset):
+    """
+    read all frames and convert the timestamp to wds format.
+    """
+    sample = {'__key__': clip_id}
+    
+    for frame_idx, data in enumerate(dataset):
+        frame = dataset_pb2.Frame()
+        frame.ParseFromString(bytearray(data.numpy()))
+        timestamp_micros = frame.timestamp_micros
+        sample[f"{frame_idx * IndexScaleRatio:06d}.timestamp_micros.txt"] = str(timestamp_micros)
+        
+    write_to_tar(sample, output_root / 'timestamp' / f'{clip_id}.tar')
+
+
 def convert_waymo_bbox(output_root: Path, clip_id: str, dataset: tf.data.TFRecordDataset):
     """
     read all frames and convert the bbox to wds format
@@ -412,6 +427,7 @@ def convert_waymo_tfrecord_to_wds(
     convert_waymo_bbox(output_wds_path, clip_id, dataset)
     convert_waymo_image(output_wds_path, clip_id, dataset, single_camera)
     convert_waymo_lidar(output_wds_path, clip_id, dataset)
+    convert_waymo_timestamp(output_wds_path, clip_id, dataset)
 
 @click.command()
 @click.option("--waymo_tfrecord_root", "-i", type=str, help="Waymo tfrecord root")
