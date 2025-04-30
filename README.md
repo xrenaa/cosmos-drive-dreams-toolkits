@@ -72,26 +72,23 @@ This will automatically launch multiple jobs based on [Ray](https://docs.ray.io/
 The output folder structure will be like this. Note that `rgb` will only be generated when setting `--post_training true`.
 ```bash
 <OUTPUT_FOLDER>
-├── camera_name_1
-│   └── hdmap
+├── hdmap
+│   └── {camera_type}_{camera_name}
 │       ├── <CLIP_ID>_0.mp4
 │       ├── <CLIP_ID>_1.mp4
 │       └── ...
 │
-│   └── lidar
+├── lidar
+│   └── {camera_type}_{camera_name}
 │       ├── <CLIP_ID>_0.mp4
 │       ├── <CLIP_ID>_1.mp4
 │       └── ...
 │
-│   └── rgb
-│       ├── <CLIP_ID>_0.mp4
-│       ├── <CLIP_ID>_1.mp4
-│       └── ...
-│ 
-├── camera_name_2
-│    └── ...
-│
-└── ...
+└── videos
+    └── {camera_type}_{camera_name}
+        ├── <CLIP_ID>_0.mp4
+        ├── <CLIP_ID>_1.mp4
+        └── ...
 ```
 
 ## Convert Public Datasets
