@@ -774,7 +774,7 @@ def forward_warp_multiframes_sparse_depth_only(
     is_ftheta: bool = False,
     expanded_kernel: Optional[int] = None,
     kernel_sigma: float = 1.0,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor,]:
     device = buffer_points.device
     dtype = buffer_points.dtype
     b = transformation2.shape[0]

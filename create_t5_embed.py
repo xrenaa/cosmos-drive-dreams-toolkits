@@ -17,9 +17,9 @@ import pickle
 from copy import deepcopy
 import pandas as pd
 
-tokenizer = T5TokenizerFast.from_pretrained("google-t5/t5-11b", cache_dir="/mnt/scratch/cache/imageinaire/")
-encoder = T5EncoderModel.from_pretrained("google-t5/t5-11b", cache_dir="/mnt/scratch/cache/imageinaire/")
-
+t5_path = "/mnt/scratch/cache/imageinaire/google-t5/t5-11b"
+tokenizer = T5TokenizerFast.from_pretrained(t5_path)
+encoder = T5EncoderModel.from_pretrained(t5_path)
 encoder.to("cuda")
 encoder.eval()
 encoder.requires_grad_(False)
@@ -104,33 +104,20 @@ def _encode_for_batch(
     default='./assets/waymo_caption.csv',
     help="Path to the folder containing caption files.",
 )
-@click.option(
-    "--save_embd_folder",
-    type=str,
-    default='/lustre/fsw/portfolios/nvr/projects/nvr_torontoai_holodeck/cosmos-mads-dataset-av/{CAMERAS.index(cur_camera)}/txt_mount_qwen_embed_fp32',
-    help="Path to the folder where the embeddings will be saved.",
-)
-@click.option(
-    "--videos_folder",
-    type=str,
-    default='',
-    help="Optional. Path to the exported videos. Only encode prompts for videos that are present",
-)
-@click.option(
-    "--save_prefix_emb_folder",
-    type=str,
-    default='',
-    help="Optional. Path to the folder where the prefix embeddings for multiview training will be saved.",
-)
-def main(caption_file, save_embd_folder, videos_folder, save_prefix_emb_folder):
+@click.option("--data_root", type=str, default="waymo_mv", help="Path to data root directory")
+
+def main(caption_file, data_root):
     """
     Main function to create T5 embeddings from caption files.
     """
-    os.makedirs(save_embd_folder, exist_ok=True)
+    save_embd_folder = os.path.join(data_root, "t5_xxl")
+    save_prefix_emb_folder = os.path.join(data_root, "cache")
+    videos_folder = os.path.join(data_root, "videos", "pinhole_front")
+    os.makedirs(os.path.join(data_root, "t5_xxl", "pinhole_front"), exist_ok=True)
     if save_prefix_emb_folder:
         os.makedirs(save_prefix_emb_folder, exist_ok=True)
         for view_name, prefix_prompt in PREFIX_PROMPTS.items():
-            t5_xxl_filename = os.path.join(save_prefix_emb_folder, f"prefix_t5_embeddings_{view_name}.pickle")
+            t5_xxl_filename = os.path.join(save_prefix_emb_folder, f"prefix_{view_name}.pkl")
             os.makedirs(os.path.dirname(t5_xxl_filename), exist_ok=True)
             if os.path.exists(t5_xxl_filename):
                 # Skip if the file already exists
@@ -160,7 +147,7 @@ def main(caption_file, save_embd_folder, videos_folder, save_prefix_emb_folder):
     caption = {}
     for key, cap in zip(key_list, caption_list):
         # check if already processed
-        if os.path.exists(os.path.join(save_embd_folder, key + ".pkl")):
+        if os.path.exists(os.path.join(save_embd_folder, 'pinhole_front', key + ".pkl")):
             continue
         if videos_folder:
             if not key in video_id_to_name:
@@ -169,49 +156,18 @@ def main(caption_file, save_embd_folder, videos_folder, save_prefix_emb_folder):
         prompts.append(cap)
         caption[all_keys[-1]] = prompts[-1]
 
-    date_string = '2025-04-18'
-    save_embd_key = 'waymo_post_training'
-
     batch_size = 100
     n_batch = len(prompts) // batch_size + 1
-
-    embedding_template = {
-        "key": save_embd_key,
-        "ground_truth": {
-            "embeddings": {"t5_xxl": None, "t5_xxl_fp8": None, "byt5_small": None, "byt5_small_fp8": None},
-            "subtree_pair_info": None,
-        },
-        "ground_truth_headline": None,
-    }
-
-    meta_tamplate = {
-        "master_id": "1620516981",
-        "media_type": "Film",
-        "caption": "Moonstone",
-        "headline": "Moonstone",
-        "aiml_eligible": False,
-        "nudity_filter": False,
-        "footage_size": "hd15",
-        "has_people": False,
-        "create_date": date_string,
-        "submit_date": date_string,
-        "associated_keywords": "",
-    }
 
     for i in tqdm(range(n_batch)):
         prompt = prompts[i * batch_size : min((i + 1) * batch_size, len(prompts))]
         out = _encode_for_batch(prompt)
         for j in range(len(out)):
             emb = out[j]
-            p = prompt[j]
-            curr_embedding_template = deepcopy(embedding_template)
-            curr_embedding_template["ground_truth"]["embeddings"]["t5_xxl"] = emb.encoded_text
-            curr_meta = deepcopy(meta_tamplate)
-            curr_meta["caption"] = p
             k = all_keys[i * batch_size + j]
-            assert p == caption[k]
-            save_out = {"json": curr_meta, "__key__": k, "pickle": curr_embedding_template}
-            pickle.dump(save_out, open(os.path.join(save_embd_folder, str(k) + ".pkl"), "wb"))
+            with  open(os.path.join(save_embd_folder, 'pinhole_front', str(k) + ".pkl"), "wb") as fp:
+                pickle.dump([emb.encoded_text], fp)
+
 
 if __name__ == "__main__":
     main()

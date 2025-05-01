@@ -10,7 +10,7 @@ from copy import deepcopy
 import torch
 
 # Initialize T5 model , please modify your t5 path here
-t5_path = "/lustre/fsw/portfolios/nvr/users/yuch/cosmos/yu_transfer/cosmos-transfer1/checkpoints/google-t5/t5-11b"
+t5_path = "/mnt/scratch/cache/imageinaire/google-t5/t5-11b"
 tokenizer = T5TokenizerFast.from_pretrained(t5_path)
 encoder = T5EncoderModel.from_pretrained(t5_path)
 encoder.to("cuda")
@@ -22,11 +22,11 @@ CAMERA_VIEWS = ["pinhole_front", "pinhole_front_left", "pinhole_front_right", "p
 
 # Prompt prefixes for each view
 PREFIX_PROMPTS = {
-    "front": "The video is captured from a camera mounted on a car. The camera is facing forward.",
-    "front_left": "The video is captured from a camera mounted on a car. The camera is facing forward and slightly to the left.",
-    "front_right": "The video is captured from a camera mounted on a car. The camera is facing forward and slightly to the right.",
-    "side_left": "The video is captured from a camera mounted on a car. The camera is facing to the left.",
-    "side_right": "The video is captured from a camera mounted on a car. The camera is facing to the right.",
+    "pinhole_front": "The video is captured from a camera mounted on a car. The camera is facing forward.",
+    "pinhole_front_left": "The video is captured from a camera mounted on a car. The camera is facing forward and slightly to the left.",
+    "pinhole_front_right": "The video is captured from a camera mounted on a car. The camera is facing forward and slightly to the right.",
+    "pinhole_side_left": "The video is captured from a camera mounted on a car. The camera is facing to the left.",
+    "pinhole_side_right": "The video is captured from a camera mounted on a car. The camera is facing to the right.",
 }
 
 def _encode_text(text: str):
@@ -90,7 +90,10 @@ def _get_video_path(data_root: Path, view: str, key: str) -> Path:
     for video_file in video_files:
         # Remove .mp4 extension and clip id suffix
         video_name = video_file.stem
-        base_name = "_".join(video_name.split("_")[:-1])
+        if video_name.endswith("_0"):
+            base_name = "_".join(video_name.split("_")[:-1])
+        else:
+            base_name = video_name
         
         if base_name == key:
             return video_file
@@ -156,7 +159,7 @@ def main(text_file: str, data_root: str):
                 f.write(caption)
             
             # Generate and save T5 embeddings
-            pkl_path = t5_dir / f"{base_key}{clip_id}.pickle"
+            pkl_path = t5_dir / f"{base_key}{clip_id}.pkl"
             if not pkl_path.exists():
                 # Generate T5 embeddings
                 t5_embedding = [_encode_text(caption)]
