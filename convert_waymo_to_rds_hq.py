@@ -288,12 +288,15 @@ def convert_waymo_bbox(output_root: Path, clip_id: str, dataset: tf.data.TFRecor
             if label.type not in valid_bbox_types:
                 continue
 
+            if not label.camera_synced_box.ByteSize():
+                continue
+
             object_id = label.id
             object_type = WaymoProto2SemanticLabel[label.type]
 
-            center_in_vehicle = np.array([label.box.center_x, label.box.center_y, label.box.center_z, 1]).reshape((4, 1))
+            center_in_vehicle = np.array([label.camera_synced_box.center_x, label.camera_synced_box.center_y, label.camera_synced_box.center_z, 1]).reshape((4, 1))
             center_in_world = vehicle_to_world @ center_in_vehicle
-            heading = label.box.heading
+            heading = label.camera_synced_box.heading
             rotation_in_vehicle = R.from_euler("xyz", [0, 0, heading], degrees=False).as_matrix()
             rotation_in_world = vehicle_to_world[:3, :3] @ rotation_in_vehicle
 
@@ -301,7 +304,7 @@ def convert_waymo_bbox(output_root: Path, clip_id: str, dataset: tf.data.TFRecor
             object_to_world[:3, :3] = rotation_in_world
             object_to_world[:3, 3] = center_in_world.flatten()[:3]
 
-            object_lwh = np.array([label.box.length, label.box.width, label.box.height])
+            object_lwh = np.array([label.camera_synced_box.length, label.camera_synced_box.width, label.camera_synced_box.height])
             
             speed = np.sqrt(label.metadata.speed_x**2 + label.metadata.speed_y**2 + label.metadata.speed_z**2)
             object_is_moving = bool(speed > min_moving_speed)
@@ -424,10 +427,10 @@ def convert_waymo_tfrecord_to_wds(
     convert_waymo_hdmap(output_wds_path, clip_id, dataset)
     convert_waymo_intrinsics(output_wds_path, clip_id, dataset)
     convert_waymo_pose(output_wds_path, clip_id, dataset)
+    convert_waymo_timestamp(output_wds_path, clip_id, dataset)
     convert_waymo_bbox(output_wds_path, clip_id, dataset)
     convert_waymo_image(output_wds_path, clip_id, dataset, single_camera)
     convert_waymo_lidar(output_wds_path, clip_id, dataset)
-    convert_waymo_timestamp(output_wds_path, clip_id, dataset)
 
 @click.command()
 @click.option("--waymo_tfrecord_root", "-i", type=str, help="Waymo tfrecord root")
