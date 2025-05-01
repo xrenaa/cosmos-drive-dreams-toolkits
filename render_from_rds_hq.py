@@ -351,8 +351,8 @@ def render_sample_lidar(
                 intrinsics,
                 buffer_points=cat_points.cuda(),
                 buffer_length=lengths_tensor.cuda(),
-                resize_h=resize_h, 
-                resize_w=resize_w,
+                target_h=resize_h,
+                target_w=resize_w,
                 center_only=False,
                 is_ftheta=(camera_type == 'ftheta'),
                 expanded_kernel=4

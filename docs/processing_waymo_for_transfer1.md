@@ -91,45 +91,52 @@ python convert_waymo_to_rds_hq.py -i <WAYMO_TFRECORDS_FOLDER> -o <WAYMO_RDS-HQ_F
 ```
 Here `<WAYMO_RDS-HQ_FOLDER>` can be set to any folder you want, and number of workers can be changed from `16`.  
 
-#### Step 4: Render HD map + bounding box / LiDAR condition video from RDS-HQ format
+#### Step 3: Render HD map + bounding box / LiDAR condition video from RDS-HQ format
 For single view post-training, run the following command:
 ```bash
-python render_from_rds_hq.py -d waymo -i <WAYMO_RDS-HQ_FOLDER>/videos -o <WAYMO_RENDER_FOLDER> -c pinhole -p True -n 8
+python render_from_rds_hq.py -d waymo -i <WAYMO_RDS-HQ_FOLDER>/videos -o <WAYMO_RENDER_FOLDER> -c pinhole -p True -n 8 -rl True
 ```
 Or, for multiview training, run:
 ```bash
-python render_from_rds_hq.py -d waymo_mv -i <WAYMO_RDS-HQ_FOLDER>/videos -o <WAYMO_RENDER_FOLDER> -c pinhole -p True -n 8
+python render_from_rds_hq.py -d waymo_mv_short -i <WAYMO_RDS-HQ_FOLDER>/videos -o <WAYMO_RENDER_FOLDER> -c pinhole -p True -n 8 -rl True
 ```
 
-#### Step 5: Create T5 Text Embeddings
+#### Step 4: Create T5 Text Embeddings
 Lastly, we need to create T5 text embeddings. 
 Make sure to have completed Cosmos-predict1 installation and use the cosmos-predict1 environment for this step:
 ```bash
 conda activate cosmos-predict1
 
-python create_t5_embed.py --caption_file ./assets/waymo_caption.csv --save_embd_folder <WAYMO_RENDER_FOLDER>/t5_xxl  --videos_folder <WAYMO_RENDER_FOLDER>/front/rgb --save_prefix_emb_folder <WAYMO_RENDER_FOLDER>/cache
+python create_t5_embed.py --caption_file ./assets/waymo_caption.csv --data_root <WAYMO_RENDER_FOLDER> 
 ```
 The resulting folder structure should look like this if you are doing multiview training, or with only the `cache/`, `front/`, and `t5_xxl/` folders if doing only front view training:
 ```
 <WAYMO_RDS-HQ_FOLDER>/waymo/
 ├── cache/
-│   ├── prefix_t5_embeddings_pinhole_front.pickle
-│   ├── prefix_t5_embeddings_pinhole_front_left.pickle
-│   ├── prefix_t5_embeddings_pinhole_front_right.pickle
-│   ├── prefix_t5_embeddings_pinhole_side_left.pickle
-│   └── prefix_t5_embeddings_pinhole_side_right.pickle
-├── front/
-│   ├── rgb/
-│   │   ├── *.mp4
-│   ├── hdmap/
-│   │   ├── *.mp4
-│   ├── lidar/
-│   │   ├── *.mp4
-├── front_left/
-├── front_right/
-├── side_left/
-├── side_right/
+│   ├── prefix_pinhole_front.pkl
+│   ├── prefix_pinhole_front_left.pkl
+│   ├── prefix_pinhole_front_right.pkl
+│   ├── prefix_pinhole_side_left.pkl
+│   └── prefix_pinhole_side_right.pkl
+├── videos/
+│   ├── pinhole_front/
+│   │   └── *.mp4
+│   ├── pinhole_left/
+│   │   └── *.mp4
+│   ├── pinhole_front_right/
+│   │   └── *.mp4
+│   *
+├── hdmap/
+├── ├── pinhole_front/
+│   │   └── *.mp4
+│   *
+├── lidar/
+├── ├── pinhole_front/
+│   │   └── *.mp4
+│   *
 └── t5_xxl/
-    └── *.pkl
+    ├── pinhole_front
+    │   └── *.pkl
+    *
 ```
 You are now ready to train cosmos-transfer models on Waymo!

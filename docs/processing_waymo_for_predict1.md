@@ -66,9 +66,17 @@ Lastly, we need to create T5 text embeddings.
 Make sure you have completed Cosmos-predict1 installation and use the cosmos-predict1 environment for this step:
 ```bash
 conda activate cosmos-predict1
-
-python create_t5_embed.py --caption_file ./assets/waymo_caption.csv --save_embd_folder <WAYMO_RDS-HQ_FOLDER>/t5_xxl  --videos_folder <WAYMO_RDS-HQ_FOLDER>/videos/pinhole_front --save_prefix_emb_folder <WAYMO_RDS-HQ_FOLDER>/cache
 ```
+We offer two set of captions, a more complete set of single view captions in `assets/waymo_caption.csv`, and a set of 5k multiview captions in `assets/waymo_multiview_texts.json`.
+To use the 5k multiview captions in `assets/waymo_multiview_texts.json`:
+```bash
+python create_t5_embed.py --text_file ./assets/waymo_multiview_texts.json --data_root <WAYMO_RDS-HQ_FOLDER>
+```
+Alternatively, to use the single view captions in `assets/waymo_caption.csv`:
+```bash
+python create_t5_embed.py --caption_file ./assets/waymo_caption.csv --data_root <WAYMO_RDS-HQ_FOLDER>
+```
+
 The resulting folder structure should look like this:
 ```
 <WAYMO_RDS-HQ_FOLDER>/waymo/
@@ -87,6 +95,7 @@ The resulting folder structure should look like this:
 │   ├── pinhole_side_right
 │   ...
 └── t5_xxl/
-    └── *.pkl
+    ├── pinhole_front
+        └── *.pkl
 ```
 You are now ready to train cosmos-predict1 models on Waymo!
