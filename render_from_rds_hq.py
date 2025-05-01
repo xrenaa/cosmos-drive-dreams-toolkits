@@ -83,7 +83,6 @@ def prepare_input(input_root, clip_id, settings, camera_type, post_training, res
         pose_all_frames = np.stack([pose_data_this_cam[k] for k in sorted(pose_data_this_cam.keys())])
 
         frame_num = pose_all_frames.shape[0]
-        frame_num = 3 + 121
         render_frame_ids = list(range(0, frame_num, INPUT_POSE_FPS // TARGET_RENDER_FPS))
 
         # interpolate bbox from 10Hz to 30Hz
