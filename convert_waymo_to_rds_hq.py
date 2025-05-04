@@ -178,9 +178,11 @@ def convert_waymo_pose(output_root: Path, clip_id: str, dataset: tf.data.TFRecor
     read all frames and convert the pose to wds format. interpolate the pose to the target fps
 
     Minimal required format:
-        sample['{frame_idx:06d}.pose.{camera_name}.npy'] = np.ndarray with shape (4, 4)
+        sample_camera_to_world['{frame_idx:06d}.pose.{camera_name}.npy'] = np.ndarray with shape (4, 4). opencv convention
+        sample_vehicle_to_world['{frame_idx:06d}.vehicle_pose.npy'] = np.ndarray with shape (4, 4). flu convention
     """
-    sample = {'__key__': clip_id}
+    sample_camera_to_world = {'__key__': clip_id}
+    sample_vehicle_to_world = {'__key__': clip_id}
 
     camera_name_to_camera_to_vehicle = {}
 
@@ -210,29 +212,50 @@ def convert_waymo_pose(output_root: Path, clip_id: str, dataset: tf.data.TFRecor
                 [-camera_to_world[:, 1:2], -camera_to_world[:, 2:3], camera_to_world[:, 0:1], camera_to_world[:, 3:4]],
                 axis=1
             )
-            sample[f"{frame_idx * IndexScaleRatio:06d}.pose.{camera_name}.npy"] = camera_to_world_opencv
+            sample_camera_to_world[f"{frame_idx * IndexScaleRatio:06d}.pose.{camera_name}.npy"] = camera_to_world_opencv
+
+        sample_vehicle_to_world[f"{frame_idx * IndexScaleRatio:06d}.vehicle_pose.npy"] = vehicle_to_world
 
     # interpolate the pose to the target fps
     # source index: 0,    1,    2,    3, ..., 10
     # target index: 0,1,2,3,4,5,6,7,8,9, ..., 30,31,32
     max_target_frame_idx = frame_idx * IndexScaleRatio
+
+    # interpolate the vehicle pose to the target fps
+    for target_frame_idx in range(max_target_frame_idx):
+        if f"{target_frame_idx:06d}.vehicle_pose.npy" not in sample_vehicle_to_world:
+            nearest_prev_frame_idx = target_frame_idx // IndexScaleRatio * IndexScaleRatio
+            nearest_prev_frame_pose = sample_vehicle_to_world[f"{nearest_prev_frame_idx:06d}.vehicle_pose.npy"]
+            nearest_next_frame_idx = (target_frame_idx // IndexScaleRatio + 1) * IndexScaleRatio
+            nearest_next_frame_pose = sample_vehicle_to_world[f"{nearest_next_frame_idx:06d}.vehicle_pose.npy"]
+            sample_vehicle_to_world[f"{target_frame_idx:06d}.vehicle_pose.npy"] = \
+                interpolate_pose(nearest_prev_frame_pose, nearest_next_frame_pose, (target_frame_idx - nearest_prev_frame_idx) / IndexScaleRatio)
+
+    # add the last two frames
+    approx_motion = sample_vehicle_to_world[f"{max_target_frame_idx:06d}.vehicle_pose.npy"] - sample_vehicle_to_world[f"{max_target_frame_idx - 1:06d}.vehicle_pose.npy"]
+    approx_motion[:3, :3] = 0
+    sample_vehicle_to_world[f"{max_target_frame_idx + 1:06d}.vehicle_pose.npy"] = sample_vehicle_to_world[f"{max_target_frame_idx:06d}.vehicle_pose.npy"] + approx_motion
+    sample_vehicle_to_world[f"{max_target_frame_idx + 2:06d}.vehicle_pose.npy"] = sample_vehicle_to_world[f"{max_target_frame_idx:06d}.vehicle_pose.npy"] + 2 * approx_motion
+
+    # interpolate the camera pose to the target fps
     for camera_name in CameraNames:
         for target_frame_idx in range(max_target_frame_idx):
-            if f"{target_frame_idx:06d}.pose.{camera_name}.npy" not in sample:
+            if f"{target_frame_idx:06d}.pose.{camera_name}.npy" not in sample_camera_to_world:
                 nearest_prev_frame_idx = target_frame_idx // IndexScaleRatio * IndexScaleRatio
-                nearest_prev_frame_pose = sample[f"{nearest_prev_frame_idx:06d}.pose.{camera_name}.npy"]
+                nearest_prev_frame_pose = sample_camera_to_world[f"{nearest_prev_frame_idx:06d}.pose.{camera_name}.npy"]
                 nearest_next_frame_idx = (target_frame_idx // IndexScaleRatio + 1) * IndexScaleRatio
-                nearest_next_frame_pose = sample[f"{nearest_next_frame_idx:06d}.pose.{camera_name}.npy"]
-                sample[f"{target_frame_idx:06d}.pose.{camera_name}.npy"] = \
+                nearest_next_frame_pose = sample_camera_to_world[f"{nearest_next_frame_idx:06d}.pose.{camera_name}.npy"]
+                sample_camera_to_world[f"{target_frame_idx:06d}.pose.{camera_name}.npy"] = \
                     interpolate_pose(nearest_prev_frame_pose, nearest_next_frame_pose, (target_frame_idx - nearest_prev_frame_idx) / IndexScaleRatio)
 
         # add the last two frames
-        approx_motion = sample[f"{max_target_frame_idx:06d}.pose.{camera_name}.npy"] - sample[f"{max_target_frame_idx - 1:06d}.pose.{camera_name}.npy"]
+        approx_motion = sample_camera_to_world[f"{max_target_frame_idx:06d}.pose.{camera_name}.npy"] - sample_camera_to_world[f"{max_target_frame_idx - 1:06d}.pose.{camera_name}.npy"]
         approx_motion[:3, :3]  = 0
-        sample[f"{max_target_frame_idx + 1:06d}.pose.{camera_name}.npy"] = sample[f"{max_target_frame_idx:06d}.pose.{camera_name}.npy"] + approx_motion
-        sample[f"{max_target_frame_idx + 2:06d}.pose.{camera_name}.npy"] = sample[f"{max_target_frame_idx:06d}.pose.{camera_name}.npy"] + 2 * approx_motion
+        sample_camera_to_world[f"{max_target_frame_idx + 1:06d}.pose.{camera_name}.npy"] = sample_camera_to_world[f"{max_target_frame_idx:06d}.pose.{camera_name}.npy"] + approx_motion
+        sample_camera_to_world[f"{max_target_frame_idx + 2:06d}.pose.{camera_name}.npy"] = sample_camera_to_world[f"{max_target_frame_idx:06d}.pose.{camera_name}.npy"] + 2 * approx_motion
 
-    write_to_tar(sample, output_root / 'pose' / f'{clip_id}.tar')
+    write_to_tar(sample_camera_to_world, output_root / 'pose' / f'{clip_id}.tar')
+    write_to_tar(sample_vehicle_to_world, output_root / 'vehicle_pose' / f'{clip_id}.tar')
 
 
 def convert_waymo_timestamp(output_root: Path, clip_id: str, dataset: tf.data.TFRecordDataset):
