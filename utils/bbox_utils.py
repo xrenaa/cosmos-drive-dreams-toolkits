@@ -12,6 +12,8 @@ from tqdm import tqdm
 from utils.minimap_utils import cuboid3d_to_polyline
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
+from pycg import Isometry
+from termcolor import cprint
 
 CLASS_COLORS = {
     "Car":  [255, 0, 0],
@@ -230,6 +232,8 @@ def quaternion_mean(quaternions):
     Returns:
         np.ndarray: Mean quaternion, shape (4,).
     """
+    cprint("Do not use this function to compute mean quaternion.", color="red")
+
     quaternions = np.array(quaternions)
 
     # Unify quaternion signs (ensure w is positive)
@@ -253,6 +257,8 @@ def rotation_matrix_mean(rotation_matrices):
     Returns:
         np.ndarray: Mean rotation matrix (3x3).
     """
+    cprint("Do not use this function to compute mean rotation matrix.", color="red")
+
     # Convert rotation matrices to Rotation objects
     rotations = [R.from_matrix(R_matrix) for R_matrix in rotation_matrices]
 
@@ -343,13 +349,23 @@ def fix_static_objects(all_object_info):
             if np.dot(heading, static_tracking_id_to_mean_heading[tracking_id]) > threshold:
                 if tracking_id not in static_tracking_id_to_tfms_remove_outlier:
                     static_tracking_id_to_tfms_remove_outlier[tracking_id] = []
-                static_tracking_id_to_tfms_remove_outlier[tracking_id].append(tfm)
+
+                tfm_orthogoal = Isometry.from_matrix(tfm, ortho=True).matrix
+                static_tracking_id_to_tfms_remove_outlier[tracking_id].append(tfm_orthogoal)
 
     # get the mean tfm of static objects (separate translation and rotation, use quaternion mean for rotation)
     static_tracking_id_to_mean_tfm = {}
     for tracking_id, tfms in static_tracking_id_to_tfms_remove_outlier.items():
         translation_mean = np.mean([tfm[:3, 3] for tfm in tfms], axis=0)
-        rotation_mean = rotation_matrix_mean([tfm[:3, :3] for tfm in tfms])
+
+        front_dir_mean = np.mean([tfm[:3, 0] for tfm in tfms], axis=0)
+        front_dir_mean /= np.linalg.norm(front_dir_mean)
+        up_dir_mean = np.mean([tfm[:3, 2] for tfm in tfms], axis=0)
+        up_dir_mean /= np.linalg.norm(up_dir_mean)
+
+        left_dir_mean = np.cross(up_dir_mean, front_dir_mean)
+        left_dir_mean /= np.linalg.norm(left_dir_mean)
+        rotation_mean = np.stack([front_dir_mean, left_dir_mean, up_dir_mean], axis=1)
         
         static_tracking_id_to_mean_tfm[tracking_id] = np.eye(4)
         static_tracking_id_to_mean_tfm[tracking_id][:3, 3] = translation_mean
