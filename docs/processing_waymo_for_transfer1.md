@@ -103,13 +103,13 @@ python render_from_rds_hq.py -d waymo_mv_short -i <WAYMO_RDS-HQ_FOLDER>/videos -
 
 #### Step 4: Create T5 Text Embeddings
 Lastly, we need to create T5 text embeddings. 
-Make sure to have completed Cosmos-predict1 installation and use the cosmos-predict1 environment for this step:
+Make sure to have completed Cosmos-transfer1 installation and use the cosmos-transfer1 environment for this step:
 ```bash
-conda activate cosmos-predict1
+conda activate cosmos-transfer1
 
 python create_t5_embed.py --caption_file ./assets/waymo_caption.csv --data_root <WAYMO_RENDER_FOLDER> 
 ```
-The resulting folder structure should look like this if you are doing multiview training, or with only the `cache/`, `front/`, and `t5_xxl/` folders if doing only front view training:
+The resulting folder structure should look like this if you are doing multiview training, or with only the `pinhole_front/` sub-folders if doing only front view training:
 ```
 <WAYMO_RDS-HQ_FOLDER>/waymo/
 ├── cache/
