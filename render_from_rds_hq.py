@@ -191,7 +191,7 @@ def prepare_output(
     output_root_p = Path(output_root)
     camera_folder_name = f"{camera_type}_{camera_name}"
     (output_root_p / render_name / camera_folder_name).mkdir(parents=True, exist_ok=True)
-    for cur_idx, i in enumerate(range(3, len(render_frame_ids), CUT_LEN - OVERLAP)):
+    for cur_idx, i in enumerate(range(0, len(render_frame_ids), CUT_LEN - OVERLAP)):
         if i + CUT_LEN > len(render_frame_ids):
             continue
 
