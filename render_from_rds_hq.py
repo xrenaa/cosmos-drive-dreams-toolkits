@@ -64,8 +64,14 @@ def prepare_input(input_root, clip_id, settings, camera_type, post_training, res
 
     if post_training: 
         TARGET_RENDER_FPS = settings['POST_TRAINING']['TARGET_RENDER_FPS']
+        TARGET_CHUNK_FRAME = settings['POST_TRAINING']['TARGET_CHUNK_FRAME']
+        OVERLAP_FRAME = settings['POST_TRAINING']['OVERLAP_FRAME']
+        MAX_CHUNK = settings['POST_TRAINING'].get('MAX_CHUNK', -1)
     else:
         TARGET_RENDER_FPS = settings['NOT_POST_TRAINING']['TARGET_RENDER_FPS']
+        TARGET_CHUNK_FRAME = settings['NOT_POST_TRAINING']['TARGET_CHUNK_FRAME']
+        OVERLAP_FRAME = settings['NOT_POST_TRAINING']['OVERLAP_FRAME']
+        MAX_CHUNK = settings['NOT_POST_TRAINING'].get('MAX_CHUNK', -1)
 
     camera_name_to_camera_model = {}
     camera_name_to_camera_poses = {}
@@ -84,6 +90,11 @@ def prepare_input(input_root, clip_id, settings, camera_type, post_training, res
 
         frame_num = pose_all_frames.shape[0]
         render_frame_ids = list(range(0, frame_num, INPUT_POSE_FPS // TARGET_RENDER_FPS))
+
+        if MAX_CHUNK > 0:
+            expected_frame_num = TARGET_CHUNK_FRAME + (TARGET_CHUNK_FRAME - OVERLAP_FRAME) * (MAX_CHUNK - 1)
+            render_frame_ids = render_frame_ids[:expected_frame_num]
+            print(f"Processing {clip_id} {camera_name} with {len(render_frame_ids)} frames only due to max_chunk={MAX_CHUNK}")
 
         # interpolate bbox from 10Hz to 30Hz
         all_object_info_file = os.path.join(input_root, 'all_object_info', f"{clip_id}.tar")
@@ -165,12 +176,12 @@ def prepare_output(
     """
     if post_training: 
         TARGET_RENDER_FPS = settings['POST_TRAINING']['TARGET_RENDER_FPS']
-        CUT_LEN = settings['POST_TRAINING']['CUT_LEN']
-        OVERLAP = settings['POST_TRAINING']['OVERLAP']
+        TARGET_CHUNK_FRAME = settings['POST_TRAINING']['TARGET_CHUNK_FRAME']
+        OVERLAP_FRAME = settings['POST_TRAINING']['OVERLAP_FRAME']
     else:
         TARGET_RENDER_FPS = settings['NOT_POST_TRAINING']['TARGET_RENDER_FPS']
-        CUT_LEN = settings['NOT_POST_TRAINING']['CUT_LEN']
-        OVERLAP = settings['NOT_POST_TRAINING']['OVERLAP']
+        TARGET_CHUNK_FRAME = settings['NOT_POST_TRAINING']['TARGET_CHUNK_FRAME']
+        OVERLAP_FRAME = settings['NOT_POST_TRAINING']['OVERLAP_FRAME']
 
     # sometimes the full_video does not match the target resolution, e.g. 720 * 1277, we need to resize it
     if full_video.shape[1] != resize_resolution[1] or full_video.shape[2] != resize_resolution[0]:
@@ -191,11 +202,11 @@ def prepare_output(
     output_root_p = Path(output_root)
     camera_folder_name = f"{camera_type}_{camera_name}"
     (output_root_p / render_name / camera_folder_name).mkdir(parents=True, exist_ok=True)
-    for cur_idx, i in enumerate(range(0, len(render_frame_ids), CUT_LEN - OVERLAP)):
-        if i + CUT_LEN > len(render_frame_ids):
+    for cur_idx, i in enumerate(range(0, len(render_frame_ids), TARGET_CHUNK_FRAME - OVERLAP_FRAME)):
+        if i + TARGET_CHUNK_FRAME > len(render_frame_ids):
             continue
 
-        full_video_cut = full_video[i:i+CUT_LEN]
+        full_video_cut = full_video[i:i+TARGET_CHUNK_FRAME]
 
         # save HD map condition video
         output_writer = imageio_v1.get_writer(
@@ -214,7 +225,7 @@ def prepare_output(
         output_writer.close()
 
 
-@ray_remote(use_ray=USE_RAY, num_gpus=0)
+@ray_remote(use_ray=USE_RAY, num_gpus=0, num_cpus=4)
 def render_sample_hdmap(
     input_root: str,
     output_root: str,
@@ -437,9 +448,10 @@ def render_sample_rgb(
         )
             
 @click.command()
-@click.option("--input_root", '-i', type=str, help="the root folder of the input data")
-@click.option("--output_root", '-o', type=str, required=True, help="the root folder of the output data")
-@click.option("--dataset", "-d", type=str, default="rds_hq", help="the dataset name, 'rds_hq' or 'waymo' or 'waymo_mv', see xxx.json in config folder")
+@click.option("--input_root", '-i', type=str, help="the root folder of RDS-HQ or RDS-HQ format dataset")
+@click.option("--clip_id_json", "-cj", type=str, default=None, help="the path to the clip id json file. If provided, we just render the clips in the json file.")
+@click.option("--output_root", '-o', type=str, required=True, help="the root folder for the output data")
+@click.option("--dataset", "-d", type=str, default="rds_hq", help="the dataset name, 'rds_hq', 'rds_hd_mv', 'waymo' or 'waymo_mv', see xxx.json in config folder")
 @click.option("--camera_type", "-c", type=str, default="ftheta", help="the type of camera model, 'pinhole' or 'ftheta'")
 @click.option("--skip", "-s", multiple=True, help="can be 'hdmap' or 'lidar'")
 @click.option("--post_training", "-p", type=bool, default=False, help="if True, output the RGB video for post-training")
@@ -448,9 +460,8 @@ def render_sample_rgb(
 @click.option("--cosmos_resolution", "-cr", type=str, default="1280,704", 
     help="Cosmos accepts 1280x704 resolution video. For training, we crop it to 1280x704. When use cosmos results for original dataset augmentation, we suggest resizing it to 1280x704")
 @click.option("--resize_last", "-rl", type=bool, default=False, help="if True, resize again from resize_resolution to the cosmos_resolution")
-@click.option("--num", "-n", type=int, default=-1, help="num clips to process")
 @click.option("--novel_pose_folder", "-np", type=str, default=None, help="the folder name of the novel pose data. If provided, we will render the novel ego trajectory")
-def main(input_root, output_root, dataset, camera_type, skip, post_training, resize_resolution, cosmos_resolution, resize_last, num, novel_pose_folder):
+def main(input_root, clip_id_json, output_root, dataset, camera_type, skip, post_training, resize_resolution, cosmos_resolution, resize_last, novel_pose_folder):
     if skip is not None:
         assert all(s in ['hdmap', 'lidar'] for s in skip), "skip must be in ['hdmap', 'lidar']"
 
@@ -460,7 +471,8 @@ def main(input_root, output_root, dataset, camera_type, skip, post_training, res
 
     if resize_last:
         if resize_resolution != cosmos_resolution:
-            print(f"{colored('[Suggestion]', 'red', attrs=['bold'])} If resize_last is True, it would be better to set resize_resolution equal to cosmos_resolution: add -rr {colored(cosmos_resolution, 'cyan', attrs=['bold'])} , avoid resizing twice!")
+            if camera_type == 'pinhole':
+                print(f"{colored('[Suggestion]', 'red', attrs=['bold'])} If resize_last is True and use pinhole camera, it would be better to set resize_resolution equal to cosmos_resolution: add -rr {colored(cosmos_resolution, 'cyan', attrs=['bold'])} , avoid resizing twice!")
             print(f"Original Resolution -> 1. {colored('Resize', 'yellow', attrs=['bold'])} to {colored(resize_resolution, 'yellow', attrs=['bold'])}")
             print(f"                    -> 2. {colored('Resize', 'yellow', attrs=['bold'])} to {colored(cosmos_resolution, 'yellow', attrs=['bold'])}.")
         else:
@@ -482,12 +494,13 @@ def main(input_root, output_root, dataset, camera_type, skip, post_training, res
     cosmos_resolution = tuple(map(int, cosmos_resolution.split(',')))
 
     # get all clip ids
-    input_root_p = Path(input_root)
-    pose_folder = 'pose' if novel_pose_folder is None else novel_pose_folder
-    clip_list = (input_root_p / pose_folder).rglob('*.tar')
-    clip_list = [c.stem for c in clip_list]
-    if num > 0:
-        clip_list = clip_list[:num]
+    if clip_id_json is not None:
+        clip_list = json.load(open(clip_id_json))
+    else:
+        input_root_p = Path(input_root)
+        pose_folder = 'pose' if novel_pose_folder is None else novel_pose_folder
+        clip_list = (input_root_p / pose_folder).rglob('*.tar')
+        clip_list = [c.stem for c in clip_list]
 
     # shuffle the clip list
     np.random.seed(0)
