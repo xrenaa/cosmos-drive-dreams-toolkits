@@ -466,7 +466,7 @@ def main(input_root, clip_id_json, output_root, dataset, camera_type, skip, post
         assert all(s in ['hdmap', 'lidar'] for s in skip), "skip must be in ['hdmap', 'lidar']"
 
     if post_training: # for post-training only
-        assert dataset in ['waymo', 'waymo_mv'], "post_training is only supported for waymo dataset"
+        assert dataset in ['waymo', 'waymo_mv', 'waymo_mv_short'], "post_training is only supported for waymo dataset"
         assert camera_type == 'pinhole', "post_training is only supported for pinhole camera"
 
     if resize_last:
