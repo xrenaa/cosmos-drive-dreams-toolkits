@@ -477,7 +477,7 @@ def main(input_root, clip_id_json, output_root, dataset, camera_type, skip, post
             print(f"Original Resolution -> 1. {colored('Resize', 'yellow', attrs=['bold'])} to {colored(resize_resolution, 'yellow', attrs=['bold'])} for {camera_type} camera model.")
             print(f"                    -> 2. {colored('Resize', 'yellow', attrs=['bold'])} to {colored(cosmos_resolution, 'yellow', attrs=['bold'])} for cosmos training.")
         else:
-            print(f"Original Resolution -> 1. {colored('Resize', 'yellow', attrs=['bold'])} to {colored(cosmos_resolution, 'yellow', attrs=['bold'])} for camera model and cosmos training.")
+            print(f"Original Resolution -> 1. {colored('Resize', 'yellow', attrs=['bold'])} to {colored(cosmos_resolution, 'yellow', attrs=['bold'])} for {camera_type} camera model and cosmos training.")
     else:
         print(f"Original Resolution -> 1. {colored('Resize', 'yellow', attrs=['bold'])} to {colored(resize_resolution, 'yellow', attrs=['bold'])} for {camera_type} camera model.")
         print(f"                    -> 2. {colored('Center Crop', 'magenta', attrs=['bold'])} to {colored(cosmos_resolution, 'magenta', attrs=['bold'])} for cosmos training.")
