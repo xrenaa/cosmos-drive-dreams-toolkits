@@ -18,5 +18,5 @@ pip install vllm==0.9.0
 ln -sf $CONDA_PREFIX/lib/python3.12/site-packages/nvidia/*/include/* $CONDA_PREFIX/include/
 ln -sf $CONDA_PREFIX/lib/python3.12/site-packages/nvidia/*/include/* $CONDA_PREFIX/include/python3.12
 # Install Transformer engine.
-pip install transformer-engine[pytorch]
+pip install transformer-engine[pytorch]==2.4.0
 ```
