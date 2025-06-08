@@ -353,7 +353,7 @@ def convert_waymo_lidar(output_root: Path, clip_id: str, dataset: tf.data.TFReco
         }
     """
     sample = {'__key__': clip_id}
-    cprint('reading lidar and converting to cosmos format, this may take a few minutes...', 'yellow')
+    cprint('reading lidar and converting to RDS-HQ format, this may take a few minutes...', 'yellow')
 
     for frame_idx, data in enumerate(dataset):
         frame = dataset_pb2.Frame()

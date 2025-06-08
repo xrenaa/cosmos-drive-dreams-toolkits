@@ -141,7 +141,7 @@ def create_minimap_projection(
             shape (N, H, W, 3), dtype=np.uint8, projected minimap data across N frames
     """
     image_height, image_width = camera_model.height, camera_model.width
-    cprint(f"Processing minimap {minimap_name} with shape {image_height}x{image_width}", 'green')
+    # cprint(f"Processing minimap {minimap_name} with shape {image_height}x{image_width}", 'green')
 
     minimap_type = get_type_from_name(minimap_name)
 
