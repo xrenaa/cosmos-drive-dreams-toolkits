@@ -324,10 +324,8 @@ def demo(cfg,
 if __name__ == "__main__":
     args, control_inputs = parse_arguments()
 
-    # caption_path = "/lustre/fs12/portfolios/nvr/users/wjay/codes/nv/cosmos-transfer1-av-sample/outputs/caption_ces_rewrite"
-    #caption_path = "/lustre/fs12/portfolios/nvr/users/wjay/codes/nv/cosmos-transfer1-av-sample/outputs/caption_ces_rewrite_0411"
-    caption_path = args.caption_path #"/lustre/fs12/portfolios/nvr/users/tianshic/caption_rewrites_0605/"
-    data_path = args.input_path #"/lustre/fs12/portfolios/nvr/projects/nvr_torontoai_holodeck/cosmos-mads-dataset-av/0"
+    caption_path = args.caption_path
+    data_path = args.input_path
     # load all the json files in the caption_path
     json_files = [f for f in os.listdir(caption_path) if f.endswith('.json')]
     # load the json file and get the prompt
@@ -377,15 +375,7 @@ if __name__ == "__main__":
 
     if USE_RAY:
         # Initialize Ray
-        ray.init(
-        address="auto",
-        # runtime_env={
-        #     "env_vars": {
-        #         "CUDA_HOME": "/home/xuanchir/shared-home/miniconda3/envs/cosmos",
-        #         "PYTHONPATH": "/home/xuanchir/shared-home/vid4d/cosmos-transfer1-av-sample",
-        #     }
-        # }
-        )
+        ray.init(address="auto")
 
         # Distribute the tasks among the actors
         futures = []
