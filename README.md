@@ -1,22 +1,63 @@
-# Cosmos Drive Dreams
+# Cosmos-Drive-Dreams
+### [Paper]() | [Hugging Face](https://huggingface.co/datasets/nvidia/PhysicalAI-Autonomous-Vehicle-Cosmos-Synthetic) | [Paper Website](https://research.nvidia.com/labs/toronto-ai/cosmos_drive_dreams)
+This is the official code repository of Cosmos-Drive-Dreams - a Synthetic Data Generation (**SDG**) pipeline built on [Cosmos World Foundation Models](https://www.nvidia.com/en-us/ai/cosmos/) for generating diverse and challenging scenarios for Autonomous Vehicle use-cases. 
+<p align="center">
+    <img src="assets/teaser.png" alt="Cosmos-Drive-Dream Teaser">
+</p>
 
+Currently, this repository implements the following stages of the Cosmos-Drive-Dreams pipeline:
+1. Rendering structured labels to condition videos
+2. Prompt rewriting 
+3. Front-view video generation
+3. Multi-view expansion
+4. Filtering via VLM
 
-## Installation
+Furthermore, this repository provides a full toolkit for visualizing structured labels [here](), editing structured labels interactively to produce novel scenarios [here](), and converting Waymo Open Dataset to our format [here]().
+
+Other stages, such as inferring condition video from unlabled RGB video and LiDAR Generation from multi-view video will soon arrive to this repo. 
+
+## Getting Started
+We provide a simple walkthrough including all stages of our SDG pipeline through example data available in the assets folder, no additional data download is neccessary. 
+
+### Installation and Model Downloading
+We recommend using conda for managing your environment. Detailed instructions for setting up Cosmos-Drive-Dreams can be found in [INSTALL.md](INSTALL.md).
+
+#### 1. Preprocessing Condition Videos
+`cosmos-drive-dreams-toolkits/render_from_rds_hq.py` is used to render the HD map + bounding box / LiDAR condition videos from RDS-HQ dataset. 
+In this example we will only be rendering the HD map + bounding box condition videos.
+Note that GPU is required for rendering LiDAR. 
 ```bash
-# Create the cosmos-transfer1 conda environment.
-conda env create --file environment.yaml
-# Activate the cosmos-transfer1 conda environment.
-conda activate cosmos-drive-dreams
-# Install the dependencies.
-pip install -r requirements.txt
-# Install vllm
-pip install https://download.pytorch.org/whl/cu128/flashinfer/flashinfer_python-0.2.5%2Bcu128torch2.7-cp38-abi3-linux_x86_64.whl
-export VLLM_ATTENTION_BACKEND=FLASHINFER
-pip install vllm==0.9.0
-
-# Patch Transformer engine linking issues in conda environments.
-ln -sf $CONDA_PREFIX/lib/python3.12/site-packages/nvidia/*/include/* $CONDA_PREFIX/include/
-ln -sf $CONDA_PREFIX/lib/python3.12/site-packages/nvidia/*/include/* $CONDA_PREFIX/include/python3.12
-# Install Transformer engine.
-pip install transformer-engine[pytorch]==2.4.0
+cd cosmos-drive-dreams-toolkits
+python render_from_rds_hq.py -i ../assets/example -o ../outputs -d rds_hq_mv --skip lidar
+cd ..
 ```
+This will automatically launch multiple jobs based on [Ray](https://docs.ray.io/en/releases-2.4.0/index.html), but since we are only processing one example here, it will be only using six workers (one for each camera in the multi-view rig). The script should return in under a minute and produce a new directory at `outputs/hdmap`:
+```
+outputs/
+└── hdmap/
+    ├── ftheta_camera_cross_left_120fov
+    │   └── 2d23*.mp4
+    ├── ftheta_camera_cross_right_120fov
+    │   └── 2d23*.mp4
+    ├── ftheta_camera_front_wide_120fov
+    │   └── 2d23*.mp4
+    ├── ftheta_camera_rear_left_120fov
+        └── 2d23*.mp4
+    ...
+```
+#### 2. Prompt Rewriting
+A prompt describing a possible manifestation for the example can be found in `assets/example/captions/2d23*.txt`. We can use a VLM ([Qwen3](https://github.com/QwenLM/Qwen3) to be exact) to augment this single prompt into many variations as follows: 
+```commandline
+python scripts/rewrite_caption.py -i assets/example/captions -o outputs/captions
+```
+The output will be saved at `outputs/captions/2d23*json`.
+
+#### 3. Front-view Video Generation
+Next, we use [Cosmos-Transfer1-7b-Sample-AV](https://github.com/nvidia-cosmos/cosmos-transfer1/blob/main/examples/inference_cosmos_transfer1_7b_sample_av.md) to generate a 121-frame RGB video from the HD Map condition video and text prompt. 
+```commandline
+PYTHONPATH="cosmos-transfer1" python scripts/generate_video_single_view.py --caption_path outputs/captions --input_path outputs --video_save_folder outputs/single_view --checkpoint_dir checkpoints/ --is_av_sample --controlnet_specs cosmos-transfer1/assets/sample_av_hdmap_spec.json
+```
+#### 4. Multiview Video Generation
+TODO
+#### 5. Filtering via VLM
+TODO?
