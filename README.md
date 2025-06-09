@@ -66,3 +66,9 @@ PYTHONPATH="cosmos-transfer1" python scripts/generate_video_single_view.py --cap
 TODO
 #### 5. Filtering via VLM
 TODO?
+
+## Citation
+
+```bibtex
+
+```
