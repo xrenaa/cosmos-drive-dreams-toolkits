@@ -28,6 +28,9 @@ In this example we will only be rendering the HD map + bounding box condition vi
 Note that GPU is required for rendering LiDAR. 
 ```bash
 cd cosmos-drive-dreams-toolkits
+
+# generate multi-view condition videos.
+# if you just want to generate front-view videos, replace `-d rds_hq_mv` with `-d rds_hq`
 python render_from_rds_hq.py -i ../assets/example -o ../outputs -d rds_hq_mv --skip lidar
 cd ..
 ```
